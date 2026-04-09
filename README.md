@@ -374,6 +374,7 @@ TIMELINE
   gbrain timeline-add <slug> <date> <text>  Add timeline entry
 
 ADMIN
+  gbrain doctor [--json]                    Health checks (pgvector, RLS, schema, embeddings)
   gbrain stats                              Brain statistics
   gbrain health                             Health dashboard (embed coverage, stale, orphans)
   gbrain history <slug>                     Page version history
@@ -507,9 +508,9 @@ against real Postgres+pgvector: `docker compose -f docker-compose.test.yml up -d
 Welcome PRs for:
 
 - SQLite engine implementation
-- Additional migration sources (Logseq, Roam, Notion)
 - New enrichment API integrations
 - Performance optimizations
+- Docker Compose for self-hosted Postgres
 
 ## License
 
