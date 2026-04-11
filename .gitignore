@@ -8,3 +8,4 @@ bin/
 .18a49f9dfb996f70-00000000.bun-build
 .gstack/
 supabase/.temp/
+.claude/skills/
