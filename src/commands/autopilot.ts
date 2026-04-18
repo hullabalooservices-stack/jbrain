@@ -291,22 +291,75 @@ function plistPath(): string {
   return join(process.env.HOME || '', 'Library', 'LaunchAgents', 'com.gbrain.autopilot.plist');
 }
 
-async function installDaemon(engine: BrainEngine, args: string[]) {
-  const repoPath = parseArg(args, '--repo') || await engine.getConfig('sync.repo_path');
-  if (!repoPath) {
-    console.error('No repo path. Use --repo or run gbrain sync --repo first.');
-    process.exit(1);
+function systemdUnitPath(): string {
+  return join(process.env.HOME || '', '.config', 'systemd', 'user', 'gbrain-autopilot.service');
+}
+
+function ephemeralStartScriptPath(): string {
+  return join(process.env.HOME || '', '.gbrain', 'start-autopilot.sh');
+}
+
+export type InstallTarget = 'macos' | 'linux-systemd' | 'ephemeral-container' | 'linux-cron';
+
+/**
+ * Detect the right supervisor for this host.
+ *
+ *   - macos   → launchd (always, when platform === 'darwin').
+ *   - ephemeral-container → Render / Railway / Fly / Docker. Crontab is
+ *                           unreliable here (wiped on deploy); we hand
+ *                           the user a start script instead.
+ *   - linux-systemd → systemd user scope actually works (is-system-running
+ *                     probe succeeds). Codex hardened from the naive
+ *                     /run/systemd/system check.
+ *   - linux-cron  → fallback.
+ */
+export function detectInstallTarget(): InstallTarget {
+  if (process.platform === 'darwin') return 'macos';
+
+  const ephemeral = !!(
+    process.env.RENDER
+    || process.env.RAILWAY_ENVIRONMENT
+    || process.env.FLY_APP_NAME
+    || existsSync('/.dockerenv')
+  );
+  if (ephemeral) return 'ephemeral-container';
+
+  if (existsSync('/run/systemd/system')) {
+    try {
+      execSync('systemctl --user is-system-running', { stdio: 'pipe', timeout: 3000 });
+      return 'linux-systemd';
+    } catch {
+      // user bus not available → fall through to cron.
+    }
   }
 
+  return 'linux-cron';
+}
+
+function detectOpenClaw(): { detected: boolean; bootstrapCandidates: string[] } {
+  const home = process.env.HOME || '';
+  const candidates = [
+    process.env.OPENCLAW_HOME ? join(process.env.OPENCLAW_HOME, 'hooks', 'bootstrap', 'ensure-services.sh') : '',
+    join(process.cwd(), 'hooks', 'bootstrap', 'ensure-services.sh'),
+    join(home, '.claude', 'hooks', 'bootstrap', 'ensure-services.sh'),
+  ].filter(Boolean) as string[];
+  const existing = candidates.filter(p => existsSync(p));
+  const signal = !!process.env.OPENCLAW_HOME
+    || existsSync(join(process.cwd(), 'openclaw.json'))
+    || existsSync(join(home, 'openclaw.json'))
+    || existing.length > 0;
+  return { detected: signal, bootstrapCandidates: existing };
+}
+
+function writeWrapperScript(repoPath: string): string {
   const home = process.env.HOME || '';
   const gbrainDir = join(home, '.gbrain');
   mkdirSync(gbrainDir, { recursive: true });
 
-  // Write a wrapper script that sources the user's shell profile for API keys
-  // instead of baking secrets into plist/crontab (#2: no plaintext keys in config files)
+  // Wrapper sources the user's shell profile for API keys so nothing is
+  // baked into plist/crontab/systemd unit files (#2).
   const wrapperPath = join(gbrainDir, 'autopilot-run.sh');
-  const gbrainPath = process.execPath;
-  // Shell-escape values to prevent command injection (#1)
+  const gbrainPath = resolveGbrainCliPath();
   const safeRepoPath = repoPath.replace(/'/g, "'\\''");
   const safeGbrainPath = gbrainPath.replace(/'/g, "'\\''");
   const wrapper = `#!/bin/bash
@@ -316,10 +369,47 @@ source ~/.zshrc 2>/dev/null || source ~/.bashrc 2>/dev/null || true
 exec '${safeGbrainPath}' autopilot --repo '${safeRepoPath}'
 `;
   writeFileSync(wrapperPath, wrapper, { mode: 0o755 });
+  return wrapperPath;
+}
 
-  if (process.platform === 'darwin') {
-    // macOS: launchd plist — runs wrapper script (no secrets in plist)
-    const plist = `<?xml version="1.0" encoding="UTF-8"?>
+async function installDaemon(engine: BrainEngine, args: string[]) {
+  const repoPath = parseArg(args, '--repo') || await engine.getConfig('sync.repo_path');
+  if (!repoPath) {
+    console.error('No repo path. Use --repo or run gbrain sync --repo first.');
+    process.exit(1);
+  }
+
+  const forcedTarget = parseArg(args, '--target') as InstallTarget | undefined;
+  const target: InstallTarget = forcedTarget ?? detectInstallTarget();
+
+  const injectBootstrap = args.includes('--inject-bootstrap');
+  const noInject = args.includes('--no-inject');
+
+  const wrapperPath = writeWrapperScript(repoPath);
+  const home = process.env.HOME || '';
+
+  switch (target) {
+    case 'macos':
+      installLaunchd(wrapperPath, home, repoPath);
+      break;
+    case 'linux-systemd':
+      installSystemd(wrapperPath, repoPath);
+      break;
+    case 'ephemeral-container':
+      installEphemeralContainer(wrapperPath, home, repoPath, { injectBootstrap, noInject });
+      break;
+    case 'linux-cron':
+      installCrontab(wrapperPath, home);
+      break;
+    default: {
+      console.error(`Unknown --target "${forcedTarget}". Allowed: macos, linux-systemd, ephemeral-container, linux-cron.`);
+      process.exit(2);
+    }
+  }
+}
+
+function installLaunchd(wrapperPath: string, home: string, repoPath: string) {
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -334,45 +424,149 @@ exec '${safeGbrainPath}' autopilot --repo '${safeRepoPath}'
 </dict>
 </plist>`;
 
-    try {
-      const agentsDir = join(home, 'Library', 'LaunchAgents');
-      mkdirSync(agentsDir, { recursive: true });
-      writeFileSync(plistPath(), plist);
-      execSync(`launchctl load "${plistPath()}"`, { stdio: 'pipe' });
-      console.log(`Installed launchd service: com.gbrain.autopilot`);
-      console.log(`  Repo: ${repoPath}`);
-      console.log(`  Log: ~/.gbrain/autopilot.log`);
-      console.log(`  Uninstall: gbrain autopilot --uninstall`);
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes('EACCES') || msg.includes('Permission')) {
-        console.error(`Permission denied writing plist. Try: mkdir -p ~/Library/LaunchAgents`);
-      } else {
-        console.error(`Failed to install: ${msg}`);
-      }
-      process.exit(1);
+  try {
+    const agentsDir = join(home, 'Library', 'LaunchAgents');
+    mkdirSync(agentsDir, { recursive: true });
+    writeFileSync(plistPath(), plist);
+    execSync(`launchctl load "${plistPath()}"`, { stdio: 'pipe' });
+    console.log('Installed launchd service: com.gbrain.autopilot');
+    console.log(`  Repo: ${repoPath}`);
+    console.log(`  Log: ~/.gbrain/autopilot.log`);
+    console.log('  Uninstall: gbrain autopilot --uninstall');
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('EACCES') || msg.includes('Permission')) {
+      console.error('Permission denied writing plist. Try: mkdir -p ~/Library/LaunchAgents');
+    } else {
+      console.error(`Failed to install: ${msg}`);
     }
-  } else {
-    // Linux/WSL: crontab — runs wrapper script (no secrets in crontab)
-    const safeWrapperPath = wrapperPath.replace(/'/g, "'\\''");
-    const cronLine = `*/5 * * * * '${safeWrapperPath}' >> '${home.replace(/'/g, "'\\''")}/.gbrain/autopilot.log' 2>&1`;
-    try {
-      const existing = execSync('crontab -l 2>/dev/null || true', { encoding: 'utf-8' });
-      if (existing.includes('gbrain autopilot') || existing.includes('autopilot-run.sh')) {
-        console.log('Crontab entry already exists. Remove with: gbrain autopilot --uninstall');
-        return;
+    process.exit(1);
+  }
+}
+
+function installSystemd(wrapperPath: string, repoPath: string) {
+  const unit = `[Unit]
+Description=GBrain Autopilot
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=${wrapperPath}
+Restart=on-failure
+RestartSec=30
+StandardOutput=append:%h/.gbrain/autopilot.log
+StandardError=append:%h/.gbrain/autopilot.err
+
+[Install]
+WantedBy=default.target
+`;
+  try {
+    const unitPath = systemdUnitPath();
+    mkdirSync(join(process.env.HOME || '', '.config', 'systemd', 'user'), { recursive: true });
+    writeFileSync(unitPath, unit);
+    execSync('systemctl --user daemon-reload', { stdio: 'pipe', timeout: 10_000 });
+    execSync('systemctl --user enable --now gbrain-autopilot.service', { stdio: 'pipe', timeout: 15_000 });
+    console.log('Installed systemd user service: gbrain-autopilot.service');
+    console.log(`  Repo: ${repoPath}`);
+    console.log('  Log: ~/.gbrain/autopilot.log');
+    console.log('  Uninstall: gbrain autopilot --uninstall');
+  } catch (e: unknown) {
+    console.error(`Failed to install systemd unit: ${e instanceof Error ? e.message : e}`);
+    console.error('You may need: `loginctl enable-linger $USER` so the unit runs without a login session.');
+    process.exit(1);
+  }
+}
+
+function installEphemeralContainer(
+  wrapperPath: string,
+  home: string,
+  repoPath: string,
+  opts: { injectBootstrap: boolean; noInject: boolean },
+) {
+  // Write a start script the agent's bootstrap can source on every container start.
+  const safeWrapperPath = wrapperPath.replace(/'/g, "'\\''");
+  const script = `#!/bin/bash
+# Auto-generated by gbrain autopilot --install (ephemeral-container target)
+# Ephemeral filesystems lose crontab on every deploy; source this from
+# your agent's bootstrap instead.
+nohup '${safeWrapperPath}' > ~/.gbrain/autopilot.log 2>&1 &
+echo \$! > ~/.gbrain/autopilot.pid
+`;
+  const scriptPath = ephemeralStartScriptPath();
+  mkdirSync(join(home, '.gbrain'), { recursive: true });
+  writeFileSync(scriptPath, script, { mode: 0o755 });
+
+  console.log('Ephemeral container detected (Render / Railway / Fly / Docker).');
+  console.log(`Repo: ${repoPath}`);
+  console.log(`Start script: ${scriptPath}`);
+  console.log('');
+  console.log('Crontab is unreliable here (wiped on deploy). Add ONE LINE to your');
+  console.log('agent bootstrap to launch autopilot on every start:');
+  console.log('');
+  console.log(`  bash ${scriptPath}`);
+  console.log('');
+
+  // OpenClaw detection + optional auto-injection into ensure-services.sh.
+  const { detected, bootstrapCandidates } = detectOpenClaw();
+  if (detected) {
+    console.log(`OpenClaw detected. Bootstrap candidates found:`);
+    for (const p of bootstrapCandidates) console.log(`  - ${p}`);
+    console.log('');
+  }
+
+  const shouldInject = (injectOpts: { detected: boolean; injectBootstrap: boolean; noInject: boolean }) => {
+    if (injectOpts.noInject) return false;
+    // Auto-inject by default when OpenClaw is detected + at least one
+    // candidate exists. Users can explicitly opt in with --inject-bootstrap
+    // on other hosts (uncommon).
+    if (injectOpts.detected && bootstrapCandidates.length > 0) return true;
+    return injectOpts.injectBootstrap;
+  };
+
+  if (shouldInject({ detected, injectBootstrap: opts.injectBootstrap, noInject: opts.noInject })) {
+    for (const candidate of bootstrapCandidates) {
+      try {
+        const existing = readFileSync(candidate, 'utf-8');
+        const marker = '# gbrain:autopilot v0.11.0';
+        if (existing.includes(marker)) {
+          console.log(`  [skip] ${candidate} already has the gbrain marker`);
+          continue;
+        }
+        // Backup before edit
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const bakPath = `${candidate}.bak.${stamp}`;
+        writeFileSync(bakPath, existing);
+        const snippet = `\n${marker}\nbash ${scriptPath}\n`;
+        writeFileSync(candidate, existing.trimEnd() + snippet);
+        console.log(`  [injected] ${candidate} (.bak at ${bakPath})`);
+      } catch (e) {
+        console.error(`  [warn] failed to inject ${candidate}: ${e instanceof Error ? e.message : e}`);
       }
-      // Use a temp file instead of echo pipe to avoid shell escaping issues (#1)
-      const tmpFile = join(gbrainDir, 'crontab.tmp');
-      writeFileSync(tmpFile, existing.trimEnd() + '\n' + cronLine + '\n');
-      execSync(`crontab '${tmpFile.replace(/'/g, "'\\''")}'`, { stdio: 'pipe' });
-      try { require('fs').unlinkSync(tmpFile); } catch {}
-      console.log('Installed crontab entry for gbrain autopilot (every 5 minutes)');
-      console.log(`  Uninstall: gbrain autopilot --uninstall`);
-    } catch (e: unknown) {
-      console.error(`Failed to install crontab: ${e instanceof Error ? e.message : e}`);
-      process.exit(1);
     }
+  }
+  console.log('  Uninstall: gbrain autopilot --uninstall');
+}
+
+function installCrontab(wrapperPath: string, home: string) {
+  // Linux/WSL without systemd — crontab runs the wrapper every 5 minutes.
+  const safeWrapperPath = wrapperPath.replace(/'/g, "'\\''");
+  const cronLine = `*/5 * * * * '${safeWrapperPath}' >> '${home.replace(/'/g, "'\\''")}/.gbrain/autopilot.log' 2>&1`;
+  try {
+    const existing = execSync('crontab -l 2>/dev/null || true', { encoding: 'utf-8' });
+    if (existing.includes('gbrain autopilot') || existing.includes('autopilot-run.sh')) {
+      console.log('Crontab entry already exists. Remove with: gbrain autopilot --uninstall');
+      return;
+    }
+    // Use a temp file instead of echo pipe to avoid shell escaping issues (#1)
+    const tmpFile = join(home, '.gbrain', 'crontab.tmp');
+    writeFileSync(tmpFile, existing.trimEnd() + '\n' + cronLine + '\n');
+    execSync(`crontab '${tmpFile.replace(/'/g, "'\\''")}'`, { stdio: 'pipe' });
+    try { unlinkSync(tmpFile); } catch { /* best-effort */ }
+    console.log('Installed crontab entry for gbrain autopilot (every 5 minutes)');
+    console.log('  Uninstall: gbrain autopilot --uninstall');
+  } catch (e: unknown) {
+    console.error(`Failed to install crontab: ${e instanceof Error ? e.message : e}`);
+    process.exit(1);
   }
 }
 
@@ -380,37 +574,105 @@ function uninstallDaemon() {
   const home = process.env.HOME || '';
   const wrapperPath = join(home, '.gbrain', 'autopilot-run.sh');
 
-  if (process.platform === 'darwin') {
+  // Always try all four targets — the user might have run `--install` under
+  // one target earlier and moved hosts (e.g. macOS laptop → Linux server).
+  // Each path is idempotent (missing files = skip silently).
+
+  let removed = 0;
+
+  // macOS launchd
+  if (existsSync(plistPath())) {
     try {
       execSync(`launchctl unload "${plistPath()}" 2>/dev/null || true`, { stdio: 'pipe' });
-      if (existsSync(plistPath())) {
-        const { unlinkSync } = require('fs');
-        unlinkSync(plistPath());
-      }
-      if (existsSync(wrapperPath)) {
-        require('fs').unlinkSync(wrapperPath);
-      }
-      console.log('Uninstalled launchd service: com.gbrain.autopilot');
-    } catch (e: unknown) {
-      console.error(`Failed to uninstall: ${e instanceof Error ? e.message : e}`);
+      unlinkSync(plistPath());
+      console.log('Removed launchd service: com.gbrain.autopilot');
+      removed++;
+    } catch (e) {
+      console.error(`  [warn] launchd: ${e instanceof Error ? e.message : e}`);
     }
-  } else {
+  }
+
+  // Linux systemd user unit
+  if (existsSync(systemdUnitPath())) {
     try {
-      const existing = execSync('crontab -l 2>/dev/null || true', { encoding: 'utf-8' });
+      execSync('systemctl --user disable --now gbrain-autopilot.service 2>/dev/null || true', { stdio: 'pipe', timeout: 10_000 });
+      unlinkSync(systemdUnitPath());
+      try { execSync('systemctl --user daemon-reload', { stdio: 'pipe', timeout: 5_000 }); } catch { /* best-effort */ }
+      console.log('Removed systemd user service: gbrain-autopilot.service');
+      removed++;
+    } catch (e) {
+      console.error(`  [warn] systemd: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  // Ephemeral container start script + bootstrap marker injection
+  if (existsSync(ephemeralStartScriptPath())) {
+    try {
+      unlinkSync(ephemeralStartScriptPath());
+      console.log('Removed ephemeral start script: ~/.gbrain/start-autopilot.sh');
+      removed++;
+    } catch (e) {
+      console.error(`  [warn] start script: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  // Remove marker-line from any OpenClaw bootstrap we previously injected.
+  try {
+    const { bootstrapCandidates } = detectOpenClaw();
+    for (const candidate of bootstrapCandidates) {
+      try {
+        const content = readFileSync(candidate, 'utf-8');
+        if (!content.includes('# gbrain:autopilot v0.11.0')) continue;
+        const lines = content.split('\n');
+        const cleaned: string[] = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes('# gbrain:autopilot v0.11.0')) {
+            // Skip this marker line AND the next line (the bash start-script call).
+            i++;
+            continue;
+          }
+          cleaned.push(lines[i]);
+        }
+        // Backup before edit
+        const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+        writeFileSync(`${candidate}.bak.${stamp}`, content);
+        writeFileSync(candidate, cleaned.join('\n'));
+        console.log(`Removed bootstrap marker from: ${candidate}`);
+        removed++;
+      } catch (e) {
+        console.error(`  [warn] bootstrap ${candidate}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+  } catch { /* OpenClaw detection best-effort */ }
+
+  // Linux crontab (don't gate on platform — the user may have run `--install
+  // --target linux-cron` on a different machine that now has the crontab).
+  try {
+    const existing = execSync('crontab -l 2>/dev/null || true', { encoding: 'utf-8' });
+    if (existing.includes('gbrain autopilot') || existing.includes('autopilot-run.sh')) {
       const filtered = existing.split('\n').filter(l =>
-        !l.includes('gbrain autopilot') && !l.includes('autopilot-run.sh')
+        !l.includes('gbrain autopilot') && !l.includes('autopilot-run.sh'),
       ).join('\n');
       const tmpFile = join(home, '.gbrain', 'crontab.tmp');
+      mkdirSync(join(home, '.gbrain'), { recursive: true });
       writeFileSync(tmpFile, filtered);
       execSync(`crontab '${tmpFile.replace(/'/g, "'\\''")}' 2>/dev/null || true`, { stdio: 'pipe' });
-      try { require('fs').unlinkSync(tmpFile); } catch {}
-      if (existsSync(wrapperPath)) {
-        require('fs').unlinkSync(wrapperPath);
-      }
+      try { unlinkSync(tmpFile); } catch { /* best-effort */ }
       console.log('Removed crontab entry for gbrain autopilot');
-    } catch (e: unknown) {
-      console.error(`Failed to uninstall: ${e instanceof Error ? e.message : e}`);
+      removed++;
     }
+  } catch (e) {
+    console.error(`  [warn] crontab: ${e instanceof Error ? e.message : e}`);
+  }
+
+  // Wrapper script — shared by all targets
+  if (existsSync(wrapperPath)) {
+    try {
+      unlinkSync(wrapperPath);
+    } catch { /* best-effort */ }
+  }
+
+  if (removed === 0) {
+    console.log('No autopilot install found on this host. Nothing to uninstall.');
   }
 }
 
