@@ -263,22 +263,69 @@ function parseRelationalQuery(
   return { seed: '', direction: 'in', linkTypes: [] };
 }
 
-// ─── Scorecard ──────────────────────────────────────────────────────
+// ─── Tolerance bands (N-run variance measurement) ──────────────────
 
-interface AdapterScorecard {
-  adapter: string;
-  queries: number;
+/**
+ * N=5 per eng pass 3 decision. For current adapters (all deterministic
+ * over sorted page input) bands will be ~0. Per-run variance surfaces
+ * when any of these enter the benchmark:
+ *   - LLM-judge scoring (future)
+ *   - Non-deterministic embedding providers
+ *   - Page-ordering-dependent dedup tie-breaks (induced here by shuffle)
+ *
+ * Shuffling ingestion order per run reveals order-sensitive bugs. An
+ * adapter with hidden order-dependence (e.g. a tie-break that favors
+ * first-seen slug) shows up as non-zero stddev.
+ */
+const RUNS_PER_ADAPTER = Number(process.env.BRAINBENCH_N ?? '5');
+
+interface RunResult {
   mean_precision_at_k: number;
   mean_recall_at_k: number;
   correct_in_top_k: number;
   total_expected: number;
 }
 
-async function scoreAdapter(
+interface AdapterScorecard {
+  adapter: string;
+  queries: number;
+  runs: number;
+  /** Mean across N runs. */
+  mean_precision_at_k: number;
+  mean_recall_at_k: number;
+  /** Sample stddev across N runs (n-1 denominator). Zero means deterministic. */
+  stddev_precision_at_k: number;
+  stddev_recall_at_k: number;
+  /** From the first run (for the headline "correct/gold" column). */
+  correct_in_top_k: number;
+  total_expected: number;
+}
+
+/**
+ * Seeded Fisher-Yates shuffle. Deterministic given the same seed so
+ * N-run results are reproducible by anyone re-running with the same seed.
+ * Uses a linear congruential generator (LCG) — good enough for benchmark
+ * permutations, not cryptographic.
+ */
+function shuffleSeeded<T>(arr: T[], seed: number): T[] {
+  const out = [...arr];
+  let s = seed >>> 0;
+  const next = () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 0x100000000;
+  };
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(next() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+async function scoreOneRun(
   adapter: Adapter,
   pages: Page[],
   queries: Query[],
-): Promise<AdapterScorecard> {
+): Promise<RunResult> {
   const state = await adapter.init(pages, { name: adapter.name });
   let totalP = 0;
   let totalR = 0;
@@ -289,14 +336,11 @@ async function scoreAdapter(
     const relevant = new Set(q.gold.relevant ?? []);
     totalP += precisionAtK(results, relevant, TOP_K);
     totalR += recallAtK(results, relevant, TOP_K);
-    // Exact top-K correct count for the headline table.
     const topK = results.slice(0, TOP_K);
     for (const r of topK) if (relevant.has(r.page_id)) totalCorrect++;
     totalExpected += relevant.size;
   }
   return {
-    adapter: adapter.name,
-    queries: queries.length,
     mean_precision_at_k: queries.length > 0 ? totalP / queries.length : 0,
     mean_recall_at_k: queries.length > 0 ? totalR / queries.length : 0,
     correct_in_top_k: totalCorrect,
@@ -304,8 +348,51 @@ async function scoreAdapter(
   };
 }
 
+function stddev(values: number[]): number {
+  const n = values.length;
+  if (n < 2) return 0;
+  const mean = values.reduce((a, b) => a + b, 0) / n;
+  const variance = values.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1);
+  return Math.sqrt(variance);
+}
+
+async function scoreAdapter(
+  adapter: Adapter,
+  pages: Page[],
+  queries: Query[],
+): Promise<AdapterScorecard> {
+  const runResults: RunResult[] = [];
+  for (let i = 0; i < RUNS_PER_ADAPTER; i++) {
+    // Shuffle pages per run with a per-run seed. Seed = i + 1 (not 0,
+    // since LCG iterates once at start of next()). Run 0 uses the seed
+    // that produces a minimally-scrambled permutation; doesn't matter
+    // for correctness since we aggregate across runs.
+    const shuffled = shuffleSeeded(pages, i + 1);
+    const r = await scoreOneRun(adapter, shuffled, queries);
+    runResults.push(r);
+  }
+  const pVals = runResults.map(r => r.mean_precision_at_k);
+  const rVals = runResults.map(r => r.mean_recall_at_k);
+  return {
+    adapter: adapter.name,
+    queries: queries.length,
+    runs: RUNS_PER_ADAPTER,
+    mean_precision_at_k: pVals.reduce((a, b) => a + b, 0) / pVals.length,
+    mean_recall_at_k: rVals.reduce((a, b) => a + b, 0) / rVals.length,
+    stddev_precision_at_k: stddev(pVals),
+    stddev_recall_at_k: stddev(rVals),
+    correct_in_top_k: runResults[0].correct_in_top_k,
+    total_expected: runResults[0].total_expected,
+  };
+}
+
 function pct(n: number, digits = 1): string {
   return `${(n * 100).toFixed(digits)}%`;
+}
+
+function pctBand(mean: number, sd: number, digits = 1): string {
+  if (sd === 0) return pct(mean, digits);
+  return `${pct(mean, digits)} \u00b1${(sd * 100).toFixed(digits)}`;
 }
 
 // ─── Main ──────────────────────────────────────────────────────────
@@ -336,24 +423,25 @@ async function main() {
     process.exit(1);
   }
 
-  log('## Running adapters\n');
+  log(`## Running adapters (N=${RUNS_PER_ADAPTER} runs per adapter, page-order shuffled per run)\n`);
   const scorecards: AdapterScorecard[] = [];
   for (const a of adapters) {
     log(`- ${a.name} ...`);
     const t0 = Date.now();
     const sc = await scoreAdapter(a, pages, queries);
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    log(`  done (${elapsed}s). P@${TOP_K} ${pct(sc.mean_precision_at_k)}, R@${TOP_K} ${pct(sc.mean_recall_at_k)}, ${sc.correct_in_top_k}/${sc.total_expected} correct in top-${TOP_K}`);
+    log(`  done (${elapsed}s). P@${TOP_K} ${pctBand(sc.mean_precision_at_k, sc.stddev_precision_at_k)}, R@${TOP_K} ${pctBand(sc.mean_recall_at_k, sc.stddev_recall_at_k)}, ${sc.correct_in_top_k}/${sc.total_expected} correct (run 1)`);
     scorecards.push(sc);
   }
 
-  log('\n## Side-by-side scorecard\n');
-  log(`| Adapter             | Queries | P@${TOP_K}  | R@${TOP_K}  | Correct in top-${TOP_K} | Gold total |`);
-  log('|---------------------|---------|--------|--------|---------------------|------------|');
+  log('\n## Side-by-side scorecard (mean \u00b1 stddev across N runs)\n');
+  log(`| Adapter             | Runs | Queries | P@${TOP_K} (mean \u00b1 sd)    | R@${TOP_K} (mean \u00b1 sd)    |`);
+  log('|---------------------|------|---------|---------------------|---------------------|');
   for (const sc of scorecards) {
-    log(`| ${sc.adapter.padEnd(19)} | ${String(sc.queries).padStart(7)} | ${pct(sc.mean_precision_at_k).padStart(6)} | ${pct(sc.mean_recall_at_k).padStart(6)} | ${String(sc.correct_in_top_k).padStart(19)} | ${String(sc.total_expected).padStart(10)} |`);
+    log(`| ${sc.adapter.padEnd(19)} | ${String(sc.runs).padStart(4)} | ${String(sc.queries).padStart(7)} | ${pctBand(sc.mean_precision_at_k, sc.stddev_precision_at_k).padStart(19)} | ${pctBand(sc.mean_recall_at_k, sc.stddev_recall_at_k).padStart(19)} |`);
   }
   log('');
+  log('*Stddev = 0 means the adapter is deterministic over page ordering. Non-zero stddev surfaces order-dependent bugs (e.g. tie-break that favors first-seen slug). LLM-judge-based metrics will produce non-zero stddev once added.*\n');
 
   if (scorecards.length >= 2) {
     const [first, ...rest] = scorecards;
