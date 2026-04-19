@@ -217,6 +217,11 @@ class GbrainAfterAdapter implements Adapter {
       rank: i + 1,
     }));
   }
+
+  async teardown(state: unknown): Promise<void> {
+    const { engine } = state as { engine: PGLiteEngine };
+    await engine.disconnect();
+  }
 }
 
 /**
@@ -340,6 +345,7 @@ async function scoreOneRun(
     for (const r of topK) if (relevant.has(r.page_id)) totalCorrect++;
     totalExpected += relevant.size;
   }
+  if (adapter.teardown) await adapter.teardown(state);
   return {
     mean_precision_at_k: queries.length > 0 ? totalP / queries.length : 0,
     mean_recall_at_k: queries.length > 0 ? totalR / queries.length : 0,

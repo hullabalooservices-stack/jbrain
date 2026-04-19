@@ -179,6 +179,14 @@ export interface Adapter {
    * Adapters that don't have a poison path return an empty map.
    */
   getPoisonDisposition?(state: BrainState): Record<string, PoisonDisposition>;
+
+  /**
+   * Release any resources held by `state` (DB connections, file locks,
+   * worker threads). Called once per run after scoring completes.
+   * Adapters that hold no resources can omit this. Without it, PGLite-backed
+   * adapters leak engine workers and Bun exits 99 at the end of the run.
+   */
+  teardown?(state: BrainState): Promise<void>;
 }
 
 // ─── Scorer helpers ─────────────────────────────────────────────────

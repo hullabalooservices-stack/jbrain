@@ -76,6 +76,11 @@ export class HybridNoGraphAdapter implements Adapter {
     return { engine } satisfies HybridNoGraphState;
   }
 
+  async teardown(state: BrainState): Promise<void> {
+    const s = state as HybridNoGraphState;
+    await s.engine.disconnect();
+  }
+
   /** Build a markdown string importFromContent can parse.
    *  Format: YAML frontmatter then body; matches what gbrain import expects. */
   private buildContentMarkdown(p: Page): string {
