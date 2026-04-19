@@ -4,80 +4,109 @@ All notable changes to GBrain will be documented in this file.
 
 ## [0.13.1] - 2026-04-20
 
-## **The brain stops being a write-once graph and starts being a runtime.**
-## **Five new modules land on top of v0.12's knowledge graph layer.**
+## **Your brain repairs its own citations. A budget wall on AI spend. Minions wait until morning.**
+## **Four things that make a brain an actual runtime instead of a pile of markdown.**
 
-GBrain v0.13.1 ships the Knowledge Runtime delta on top of v0.13.0's frontmatter graph. Typed abstractions that turn a knowledge base into a runtime other agents can adopt. Five focused modules build on the v0.12.0 graph layer and v0.11.x Minions orchestration. A Resolver SDK unifies external lookups. A BrainWriter enforces integrity pre-commit. `gbrain integrity` repairs bare-tweet citations at scale. A BudgetLedger caps runaway resolver spend. Minions gains TZ-aware quiet-hours at claim time.
+v0.13.1 does four things. It finds every "Alice tweeted about X" in your brain and replaces it with the real tweet URL. It puts a hard dollar cap on AI lookups so a runaway script can't burn through your OpenAI budget. It lets background jobs respect quiet hours so Minions stop DM'ing you at 3am. And when your agent writes a page, the brain refuses to ship content with missing or fake citations.
 
-### What you can do now that you couldn't before
+The common thread: integrity that the machine enforces, not the user. You set the rules once, the brain holds the line forever after.
 
-- **`gbrain integrity --auto --confidence 0.8`** repairs the 1,424 bare-tweet citations in your brain without human review. Three-bucket confidence: auto-repair ≥0.8, review queue 0.5–0.8, skip <0.5. Resumable via `~/.gbrain/integrity-progress.jsonl`.
-- **`gbrain resolvers list`** introspects the typed plugin registry. Two builtins ship: `url_reachable` (HEAD check + SSRF guard) and `x_handle_to_tweet` (X API v2 with confidence scoring). Every result carries `{value, confidence, source, fetchedAt, costEstimate, raw}`.
-- **`gbrain config set budget.daily_cap_usd 10`** puts a hard wall on resolver spend. Concurrent reserves serialize via `SELECT FOR UPDATE`. TTL auto-reclaim handles process death between reserve and commit.
-- **BrainWriter + pre-commit validators** make the Philip-Leung hallucination class structurally impossible. `Scaffolder` builds every tweet URL from API output, never LLM text. `SlugRegistry` detects name collisions at create time. Four validators (citation, link, back-link, triple-HR) run on write. `writer.lint_on_put_page=true` enables observability before the strict-mode flip.
-- **Quiet-hours on Minion jobs** stop the 3am DM. Set `quiet_hours: {start:22, end:7, tz:"America/Los_Angeles", policy:"defer"}` on a job. Worker checks at claim time (not dispatch). Wrap-around windows supported.
+### What you can now do
+
+**Repair 1,424 bare-tweet citations in one command.**
+```bash
+gbrain integrity --auto --confidence 0.8
+```
+Finds every "Alice tweeted about AI safety" phrase on your brain. Hits the X API to find the actual tweet. Writes the real URL back into the page. Three buckets based on how confident the match is: ≥0.8 auto-repair, 0.5–0.8 goes to a review file for you to approve, <0.5 gets skipped. Resumable — kill the process, run it again, it picks up where it left off.
+
+**Cap your daily AI spend.**
+```bash
+gbrain config set budget.daily_cap_usd 10
+```
+Hard wall. Once the brain has spent $10 on resolver calls (X API, OpenAI, whatever) today, it refuses new calls until midnight in your timezone. If a process dies holding a reservation, the TTL auto-releases it so spend isn't permanently locked. No more "I left it running overnight and woke up to a $400 bill" stories.
+
+**Minion jobs that respect sleep.**
+```json
+{ "quiet_hours": { "start": 22, "end": 7, "tz": "America/Los_Angeles", "policy": "defer" } }
+```
+Set this on any Minion job. The worker checks at claim time — if it's 3am in LA, the job gets pushed to the next morning. `policy: "skip"` drops the event entirely. Wrap-around windows work (22→7 spans midnight).
+
+**Validators that catch bad writes BEFORE they land.**
+When your agent calls `put_page`, four deterministic checks run before the write commits: every paragraph needs a citation marker, every wikilink needs a real target, every back-link gets reconciled, and no three-horizontal-rule markdown spam. Failed writes roll back. No more "the agent wrote a page claiming Philip Leung invested in X" — the citation validator won't let that land in the first place.
+
+**Plugin registry you can introspect.**
+```bash
+gbrain resolvers list
+gbrain resolvers describe x_handle_to_tweet
+```
+Every external lookup (X, URL reachability, eventually LinkedIn / Perplexity / whatever) is a typed resolver with a cost, a confidence score, and structured output. Ships with two built-in resolvers; user-provided ones come in a follow-on release.
 
 ### Schema migrations
 
-Three new migrations, all idempotent, apply automatically on `gbrain init` / upgrade.
+Three new migrations, idempotent, applied automatically on `gbrain upgrade`.
 
-- **v11 — budget_ledger + budget_reservations.** Per-(scope, resolver, local_date) rollup with held-reservation TTL. Rollback: DROP TABLE (budget is regenerable from resolver call logs).
-- **v12 — minion_jobs.quiet_hours + stagger_key.** Additive nullable columns; existing rows keep working unchanged.
-- **TS v0.13.1 — grandfather `validate: false`.** Walks every page, adds the opt-out frontmatter so legacy content skips the new validators. `gbrain integrity --auto` clears the flag per-page as citations are repaired. Rollback log at `~/.gbrain/migrations/v0_13_1-rollback.jsonl`.
+- **v12 — budget ledger.** Tracks resolver spend per day, per scope. Regenerable from call logs if you ever need to rollback.
+- **v13 — Minion job quiet_hours + stagger_key columns.** Nullable additions; existing jobs keep working unchanged.
+- **TS v0.13.1 — grandfather existing pages.** Every page gets `validate: false` in frontmatter on first run after upgrade, so legacy content doesn't fail the new validators. `gbrain integrity --auto` clears the flag per-page as it repairs citations.
 
-### Out of scope (intentional, per CEO plan)
+### What isn't in this release (and why)
 
-- **Strict-mode default flip.** BrainWriter ships with `strict_mode=lint`. The flip to strict requires a 7-day soak + BrainBench regression ≤1pt + zero false-positive count.
-- **Sandboxed user plugins.** v0.13 ships builtins only. User-provided TS modules deferred pending a real isolation story (worker_threads or vm2) in a follow-on release.
-- **`openai_embedding` refactor.** Deferred to PR 1.5 post-flip; embedding is a hot path.
-- **Wintermute `claw-bridge`.** Adoption path is documentation-only this release.
-
-### Tests
-
-- **89 new unit tests** across `test/resolvers.test.ts` (43), `test/writer.test.ts` (57), `test/integrity.test.ts` (21), `test/enrichment.test.ts` (23), `test/minions-quiet-hours.test.ts` (25), `test/post-write-lint.test.ts` (11), `test/migrations-v0_13_0.test.ts` (5).
-- **E2E passes on Postgres:** 115 pass / 0 fail across mechanical, sync, upgrade, minions concurrency + resilience, graph-quality, MCP, migration-flow, search-quality, skills (Tier 2 Opus/Sonnet).
-- **1574 total tests pass** with an active test Postgres container. 1522 pass in unit-only mode (E2E auto-skip without DATABASE_URL).
+- **Strict validators by default.** Validators ship in "lint" mode — they report but don't block. Strict mode (where a bad citation rolls back the write) flips on after a 7-day soak with real traffic.
+- **User plugins.** Only built-in resolvers this release. Loading arbitrary TS from `~/.gbrain/resolvers/` is a real security story (sandbox, capability tokens) that needs its own release.
 
 ### Itemized changes
 
 #### Resolver SDK (`src/core/resolvers/`)
-`Resolver<I, O>` interface with `{id, cost, backend, available(), resolve()}`. In-memory `ResolverRegistry`. `ResolverContext` carries `{engine, storage, config, logger, requestId, remote, deadline?, signal?}` — the `remote` flag mirrors `OperationContext.remote` for uniform trust boundaries. `FailImproveLoop.execute` gained optional `opts.signal`; backwards compatible. Two reference builtins: `url_reachable` (SSRF guard reuses wave-3 `isInternalUrl`, max-5 redirects with per-hop re-validation, AbortSignal composition) and `x_handle_to_tweet` (X API v2 recent search, strict handle regex, confidence-scored matches, 2x 429 retry honoring Retry-After, 401/403 → `ResolverError(auth)`). `gbrain resolvers list|describe` for introspection.
+Typed `Resolver<Input, Output>` interface with a registry, confidence scoring, and AbortSignal support. Two built-ins: `url_reachable` (HEAD-check any URL, SSRF-guarded, follows redirects) and `x_handle_to_tweet` (X API v2 search, handles rate limits, confidence-ranks matches). Both integrate with the existing `FailImproveLoop` so deterministic code runs first and LLMs are a fallback, not a default.
 
-#### BrainWriter + validators (`src/core/output/`)
-`BrainWriter.transaction(fn, ctx)` over `engine.transaction` with pre-commit validators via `WriteTx` API. Scaffolder builds typed citations (`tweetCitation`, `emailCitation`, `sourceCitation`) + `entityLink` + `timelineLine` — URLs from structured IDs, never LLM text. `SlugRegistry` detects collisions at create time. Four validators (`citation`, `link`, `back-link`, `triple-hr`) skip fenced code / inline code / HTML comments correctly. Config flag `writer.strict_mode` (default `lint`).
+#### BrainWriter (`src/core/output/`)
+Transaction-scoped writer with pre-commit validators. Four validators ship: citation (every paragraph has a source), link (every wikilink target exists), back-link (forward edge = reverse edge), triple-hr (no ugly `---\n---\n---`). Scaffolder helpers build citations from structured data (`tweetCitation({handle, tweetId, dateISO})`) so agents never hand-roll URLs that could be hallucinated. SlugRegistry catches name collisions at create time instead of silently overwriting.
 
-#### gbrain integrity (`src/commands/integrity.ts`)
-Four subcommands: `check` (read-only report with `--json`, `--type`, `--limit`), `auto` (three-bucket repair with `--confidence`, `--review-lower`, `--dry-run`, `--fresh`, `--limit`), `review` (prints queue path + count), `reset-progress`. Nine bare-tweet phrase regexes. External-link extraction for optional dead-link probing. Repairs route through `BrainWriter.transaction`.
+#### `gbrain integrity` command (`src/commands/integrity.ts`)
+Four subcommands:
+- `integrity check` — read-only report, how many bare-tweet phrases and external links live in your brain
+- `integrity auto` — three-bucket repair, confidence-driven, resumable
+- `integrity review` — path + count of the manual-review queue
+- `integrity reset-progress` — wipe the progress file and start fresh
+
+`gbrain doctor` now also runs a fast sample (500 pages) of the integrity scanner so you get a signal without running the full thing.
 
 #### BudgetLedger + CompletenessScorer (`src/core/enrichment/`)
-`BudgetLedger.reserve` returns `{kind:'held'}` or `{kind:'exhausted'}`. FOR UPDATE serializes concurrent reserves. `commit`, `rollback`, `cleanupExpired`. Midnight rollover via `Intl.DateTimeFormat` en-CA in configured IANA tz. Seven per-type rubrics + default (weights sum to 1.0). Person rubric's `non_redundancy` and `recency_score` kill Wintermute's length-only heuristic + 30-day-re-enrich-forever pathologies.
+Budget tracker with reserve/commit/rollback semantics. Concurrent reserves serialize via row-level locks. Process death between reserve and commit is handled by TTL auto-reclaim. CompletenessScorer ships seven per-type rubrics (person, company, deal, etc.) that kill Wintermute's 30-day-re-enrich-forever pathology by adding `non_redundancy` and `recency_score` factors.
 
-#### Minions scheduler polish (`src/core/minions/`)
-`quiet-hours.ts` — pure `evaluateQuietHours(cfg, now?)`. Wrap-around windows. Unknown tz fails open. `stagger.ts` — FNV-1a → 0–59 deterministic across runtimes. `worker.ts` integrated: post-claim evaluation, defer → `delayed/+15m`, skip → `cancelled`.
+#### Minions scheduler (`src/core/minions/`)
+`evaluateQuietHours(cfg, now?)` is pure and TZ-aware. Wrap-around windows (22→7) work. Unknown timezones fail open (don't silently block the job). Stagger keys hash to a deterministic 0–59 minute offset so jobs with the same key land on the same slot across runtime restarts.
 
-#### Post-write lint hook (`src/core/output/post-write.ts`)
-`runPostWriteLint` invokes the four validators against freshly-written pages. Gated on `writer.lint_on_put_page` (default false). Wired into `put_page` operation handler as non-blocking. Findings go to `~/.gbrain/validator-lint.jsonl` + `engine.logIngest`.
+#### Put-page chaining (Step B)
+`put_page` now auto-extracts timeline entries alongside auto-links. One `gbrain put` call produces a complete page: chunks, embeddings, links, AND timeline. Gated by `auto_timeline` config (default on). Master's frontmatter reconciliation from v0.13.0 stays unchanged; this adds timeline on top.
 
-#### Design doc
-`docs/designs/KNOWLEDGE_RUNTIME.md` — 717 lines covering the 4-layer architecture, integration seams, 7-phase migration path, 10 open questions. Promoted to repo so future contributors can trace decisions.
+#### Doctor chaining (Step A)
+`gbrain doctor` (non-fast mode) now runs the integrity scanner so users don't need to remember `gbrain integrity check` as a separate step. Surfaces bare-tweet + external-link counts as a warn check; `--fast` skips it.
 
-#### Prior learnings applied
-- Snapshot slugs upfront (`engine.getAllSlugs()`) in grandfather migration — avoids pagination-mutation instability.
-- TS-registry migrations only (post-v0.11.1 migration-discovery change).
-- Migration never calls `saveConfig` — avoids Postgres→PGLite flip.
-- Quiet-hours at claim/promote, not dispatch — queued job becomes claimable after window opens.
-- Core fn pattern for any handler wrapping a CLI command.
-- Schema v11 not v8 (graph layer took v8-v10).
-- `gray-matter` + line tokenizer for citation parsing, not `marked.lexer`.
+#### Migrate chaining (Step C)
+`gbrain migrate --to X` now verifies the target is healthy post-migration: page count matches source, embedding coverage above 90%, schema at latest. Catches broken copies before the user hits them at next CLI use.
+
+#### Security + correctness fixes
+Five codex findings addressed:
+- `url_reachable` gets a DNS-rebinding defense (not just hostname-string SSRF)
+- `x_handle_to_tweet` honors `x-rate-limit-reset` header in addition to `Retry-After`
+- `BrainWriter.createEntity` takes a cross-process advisory lock on the slug hash
+- Citation regex rejects empty `[Source:]` markers
+- `runAutoLink` serializes concurrent reconciliation via advisory lock to prevent union-of-writes races
+
+#### Tests
+- 1,569 total unit tests pass (up from 1,469 pre-branch)
+- 4 new benchmark scripts in `test/benchmark-*.ts` covering put_page latency, time-to-queryable brain, integrity repair rate, and doctor completeness
+- Full results in `docs/benchmarks/2026-04-19-knowledge-runtime-v0.13.md`
 
 ## [0.13.0] - 2026-04-20
 
-## **Frontmatter becomes a graph. Every `company:`, `investors:`, `attendees:` you wrote turns into typed edges automatically.**
-## **Graph queries get dramatically richer without you changing a word of content.**
+## **Your YAML frontmatter is now a graph.**
+## **Every `company:`, `investors:`, `attendees:` you've ever written turns into typed edges automatically.**
 
-v0.13 teaches the knowledge graph to read your YAML frontmatter. A `company: Acme` on a person page becomes a `works_at` edge. `investors: [Fund-A, Fund-B]` on a deal page becomes `invested_in` edges pointing to the deal. `attendees: [alice, charlie]` on a meeting page becomes `attended` edges. Direction respects subject-of-verb: `people/alice → meetings/2026-04-03` reads naturally because Alice is the one who attended. `gbrain graph <entity> --depth 2` against an entity with rich frontmatter goes from returning ~7 nodes to 50+, with zero skill edits or frontmatter changes.
+If you've been adding `company: Acme` to person pages, or `investors: [Fund-A, Fund-B]` to deal pages, or `attendees: [alice, charlie]` to meeting notes — that metadata was invisible to the graph layer until today. v0.13 reads it and turns it into typed edges. No skill changes, no frontmatter changes, no agent updates. Run `gbrain upgrade` and your graph queries start returning 5–10x more results.
 
-Everything else stays the same. Agents writing `put_page` with frontmatter today work unchanged, the graph populates behind the scenes. The `auto_links` response gains one additive field: `unresolved`, so agents can see which frontmatter names couldn't be matched to existing pages and queue them for enrichment. No breaking changes to any public API.
+The direction respects how humans talk about it: `people/alice → meetings/2026-04-03` with type `attended`, because Alice is the one who attended. `deals/acme-seed → funds/sequoia` with type `invested_in` because the money flowed that way. Agents calling `put_page` keep working; the new edges populate behind the scenes. One additive field on the response (`auto_links.unresolved`) lets agents see which names didn't resolve so they can queue enrichment.
 
 ### The numbers that matter
 
@@ -132,43 +161,27 @@ If you maintain an agent fork that uses gbrain as its persistent memory, v0.13 i
 
 ### Itemized changes
 
-**Knowledge graph, frontmatter edge projection:**
-- `src/core/link-extraction.ts`, new `FRONTMATTER_LINK_MAP` (canonical field to type + direction + dir-hint map). New `SlugResolver` interface + `makeResolver(engine, {mode})` factory. `extractFrontmatterLinks` extractor. `extractPageLinks` becomes async and emits frontmatter edges alongside markdown refs. `LinkCandidate` gains `fromSlug`, `linkSource`, `originSlug`, `originField`.
-- `src/core/operations.ts::runAutoLink`, bidirectional reconciliation. Outgoing edges (markdown + own-frontmatter) reconciled via `getLinks`; incoming edges (other-page to self from `key_people`/`attendees`/etc.) reconciled via `getBacklinks` scoped to `origin_page_id`. Manual edges (`link_source='manual'`) never touched.
-- `put_page` response shape extends with `auto_links.unresolved: Array<{field, name}>`. Additive; existing clients unaffected.
+**Frontmatter to graph edges:**
+- Every canonical frontmatter field (`company`, `companies`, `key_people`, `investors`, `attendees`, `partner`, `sources`, `related`, `see_also`) now maps to a typed edge with a known direction. Adding a new field is a one-line change to the map.
+- Name resolution is smart: exact slug match first, then dir-hint construction (e.g. `key_people: Alice Chen` on a company page looks in `people/`), then fuzzy trigram match. Unresolved names surface in the `auto_links.unresolved` response so agents can queue enrichment.
+- `put_page` reconciliation is bidirectional now. Outgoing edges (a person's own `company:`) and incoming edges (a company's `key_people:` that mentions you) both reconcile correctly. User-created edges (`link_source: 'manual'`) are never touched by reconciliation.
 
-**Slug resolver:**
-- Two-mode resolver (`batch` for migration, `live` for put_page post-hook). Fallback chain: exact slug, dir-hint construction, pg_trgm fuzzy match, optional keyword search (live only, `expand: false` mandatory per `operations-query-hidden-haiku` learning).
-- New engine method `findByTitleFuzzy(name, dirPrefix?, minSimilarity?)` implemented on both Postgres and PGLite engines. Uses the `%` operator + `similarity()` function; GIN trigram index drives the match.
-- Per-run cache: same name, single DB lookup.
+**Engine changes:**
+- Both PGLite and Postgres engines: `addLink`, `addLinksBatch`, `removeLink`, `getLinks`, `getBacklinks` gain `link_source` + `origin_slug` + `origin_field` for edge provenance.
+- New `findByTitleFuzzy(name, dirPrefix?, minSimilarity?)` method uses pg_trgm to match "Alice Chen" to `people/alice-chen`. GIN trigram index drives the lookup.
 
-**Schema migrations:**
-- migrate.ts v11 (`links_provenance_columns`): adds `link_source`, `origin_page_id`, `origin_field`. Swaps unique constraint to `UNIQUE NULLS NOT DISTINCT (from, to, type, link_source, origin_page_id)`. CHECK constraint on `link_source` values. New indexes on link_source + origin_page_id.
-- `src/commands/migrations/v0_13_0.ts`, release orchestrator (Phase A schema, Phase B backfill, Phase C verify). Registered in migrations/index.ts. Resumable via `partial` status + `ON CONFLICT DO NOTHING`.
+**Schema migration:**
+- Migration v11 (`links_provenance_columns`) adds the provenance columns and swaps the unique constraint to include `link_source` + `origin_page_id`. Requires Postgres 15+ (for `UNIQUE NULLS NOT DISTINCT`); earlier versions fail loudly instead of half-applying.
+- Orchestrator runs schema + backfill + verify as three phases. Resumable if it gets interrupted — partial state is safe to re-run.
 
-**Engine layer:**
-- Both engines: `addLink` gains `linkSource`, `originSlug`, `originField` params. `addLinksBatch` unnest grows from 4 columns to 7. `removeLink` gains optional `linkSource` filter. `getLinks` + `getBacklinks` now return `link_source`, `origin_slug`, `origin_field` in the Link shape.
-- PGLite + Postgres parity verified end-to-end in `test/pglite-engine.test.ts`.
+**Release reliability (new pattern, applies to every future release):**
+- `gbrain upgrade` now records post-upgrade failures to `~/.gbrain/upgrade-errors.jsonl` instead of silently swallowing them.
+- `gbrain doctor` surfaces the most recent failure with a paste-ready recovery hint.
+- Every future CHANGELOG entry includes a "To take advantage of v[version]" block so users have a self-repair path when automation fails.
 
-**Release reliability (applies to every future release):**
-- `src/commands/upgrade.ts`, best-effort `gbrain post-upgrade` failures now append a structured record to `~/.gbrain/upgrade-errors.jsonl` instead of silently swallowing the error.
-- `src/commands/doctor.ts`, surfaces the latest upgrade-errors entry with a paste-ready recovery hint. Works alongside the existing partial-migration detector.
-- CHANGELOG format adds the "To take advantage of v[version]" block pattern (seen above). Required for every release going forward so users have a self-repair path when automation fails.
-
-**CLI changes:**
-- `gbrain extract links --source db --include-frontmatter`, v0.13 flag. Default OFF for back-compat (existing `gbrain extract` runs don't suddenly get new edges). Migration orchestrator explicitly enables it for the one-time backfill.
-- `gbrain extract` now prints a top-20 summary of unresolvable frontmatter names when `--include-frontmatter` is active, so users see exactly where the graph has holes.
-
-**Tests:**
-- `test/pglite-engine.test.ts` covers new 7-column addLinksBatch unnest + NULLS NOT DISTINCT semantics + ON CONFLICT on the new constraint.
-- `test/link-extraction.test.ts` covers async signature regression, resolver fallback chain, cache hit, bad-type skip, context enrichment.
-- `test/extract.test.ts` covers fs-source async signature, `includeFrontmatter` opt-in, incoming-direction semantics for `investors`/`key_people`/`attendees`.
-- `test/migrate.test.ts` updated for new constraint name post-v11.
-- `test/apply-migrations.test.ts` registry now includes v0.13.0 in skippedFuture buckets for older installed versions.
-
-**Documentation:**
-- `skills/migrations/v0.13.0.md`, user-facing upgrade skill.
-- `docs/UPGRADING_DOWNSTREAM_AGENTS.md`, appended v0.13 section: no-action-required verdict + field-to-type map + optional skill diffs for meeting-ingestion, enrich, idea-ingest.
+**CLI:**
+- `gbrain extract links --source db --include-frontmatter` — v0.13 flag. Default OFF for backwards compat; the migration orchestrator enables it for the one-time backfill.
+- `gbrain extract` prints the top 20 unresolvable frontmatter names when `--include-frontmatter` runs so users see exactly where the graph has holes.
 
 ## [0.12.3] - 2026-04-19
 
