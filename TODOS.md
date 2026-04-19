@@ -88,7 +88,7 @@ board" — likely an advisor-role page prior plus verb-pattern combinations.
 
 **What:** `minion_schedules` table + autopilot-cycle scanner that submits due shell jobs.
 
-**Why:** v0.13.0 moves shell scripts to Minions but still leaves scheduling in the host crontab. Wintermute's `scripts/service-manager.sh` + crontab is the only piece left on the host side. A DB-driven scheduler would mean a single `gbrain autopilot --install` replaces the host crontab entirely, scheduling is visible via `gbrain jobs list --scheduled`, and downtime-on-one-machine tolerance improves (schedule is shared DB state, not per-host crontab).
+**Why:** v0.13.0 moves shell scripts to Minions but still leaves scheduling in the host crontab. Your OpenClaw's `scripts/service-manager.sh` + crontab is the only piece left on the host side. A DB-driven scheduler would mean a single `gbrain autopilot --install` replaces the host crontab entirely, scheduling is visible via `gbrain jobs list --scheduled`, and downtime-on-one-machine tolerance improves (schedule is shared DB state, not per-host crontab).
 
 **Pros:** Canonical host-agnostic deployment. No more host-specific crontab.
 
@@ -100,7 +100,7 @@ board" — likely an advisor-role page prior plus verb-pattern combinations.
 
 **What:** Parse an existing crontab file, emit a proposed rewrite using `gbrain jobs submit shell ...` for each deterministic entry, keep LLM-requiring entries as-is.
 
-**Why:** Hand-rewriting 14 Wintermute cron entries is error-prone and one-shot. A helper would make the migration reversible and auditable (diff the before/after crontab, dry-run the first N, commit).
+**Why:** Hand-rewriting ~14 OpenClaw cron entries is error-prone and one-shot. A helper would make the migration reversible and auditable (diff the before/after crontab, dry-run the first N, commit).
 
 **Pros:** Removes the "rewrite 14 lines by hand" tax every agent operator pays on adoption.
 
@@ -268,7 +268,7 @@ board" — likely an advisor-role page prior plus verb-pattern combinations.
 
 **What:** Add `max_stdout_bytes` / `max_stderr_bytes` to ShellJobParams; override the 64KB/16KB defaults.
 
-**Why:** 64KB/16KB covers Wintermute's scripts today but a verbose benchmark or a debug-dump script could need more.
+**Why:** 64KB/16KB covers typical OpenClaw scripts today but a verbose benchmark or a debug-dump script could need more.
 
 **Depends on:** First shell-job author who actually needs it. Don't pre-build the flag.
 

@@ -81,7 +81,7 @@ Rewrite crontab to submit shell jobs (no `--follow`):
 # After (Minions worker):
 3 13,16,19,22,1,4,7,10 * * * \
   gbrain jobs submit shell \
-    --params '{"cmd":"node scripts/x-garrytan-daily.mjs","cwd":"/data/wintermute"}' \
+    --params '{"cmd":"node scripts/x-garrytan-daily.mjs","cwd":"/data/.openclaw/workspace"}' \
     --max-attempts 3 --timeout-ms 300000
 ```
 
@@ -98,7 +98,7 @@ uses `--follow` to run inline:
 # Each cron tick spawns a short-lived worker that runs the job inline.
 3 13,16,19,22,1,4,7,10 * * * \
   GBRAIN_ALLOW_SHELL_JOBS=1 gbrain jobs submit shell \
-    --params '{"cmd":"node scripts/x-garrytan-daily.mjs","cwd":"/data/wintermute"}' \
+    --params '{"cmd":"node scripts/x-garrytan-daily.mjs","cwd":"/data/.openclaw/workspace"}' \
     --follow --timeout-ms 300000
 ```
 

@@ -7,7 +7,7 @@ All notable changes to GBrain will be documented in this file.
 ## **Move gateway crons to Minions. Zero LLM tokens per cron fire.**
 ## **Worker abort path finally marks aborted jobs dead.**
 
-Wintermute's gateway pinned at 100% CPU because 32 OpenClaw cron jobs boot a full Opus session each fire, and 14 of them are pure API-fetch-and-write scripts that don't need reasoning at all. This release adds a `shell` job type to Minions so those 14 crons move off the gateway to the worker. ~60% gateway load reduction at Wintermute's scale. Retry, backoff, DLQ, unified `gbrain jobs list` visibility, all free. The 18 crons that actually need LLM reasoning stay on the gateway where they belong.
+Your OpenClaw gateway pins at 100% CPU when your 32 cron jobs each boot a full Opus session per fire, and ~14 of them are pure API-fetch-and-write scripts that don't need reasoning at all. This release adds a `shell` job type to Minions so those deterministic crons move off the gateway to the Minions worker. ~60% gateway load reduction at OpenClaw scale. Retry, backoff, DLQ, unified `gbrain jobs list` visibility, all free. The LLM-reasoning crons stay on the gateway where they belong.
 
 Getting there meant fixing the Minions worker abort path, which was quietly wrong since v0.11: aborted jobs (timeout, cancel, lock loss) returned silently without calling `failJob`, so status stayed `active` until a stall sweep found them ~30s later. This release makes abort-reason the `error_text` of an immediate `failJob` call. Handlers get cleaner signals, operators see accurate status, `--follow` stops hanging past timeouts.
 
@@ -17,8 +17,8 @@ Measured on the new `test/minions-shell.test.ts` (40 unit cases) and `test/e2e/m
 
 | Metric                                            | BEFORE v0.13.0          | AFTER v0.13.0                     | Δ                    |
 |---------------------------------------------------|-------------------------|-----------------------------------|----------------------|
-| LLM tokens per Wintermute cron fire               | ~full Opus context boot | 0 (deterministic crons)           | **100% reduction**   |
-| Gateway CPU headroom with 14 crons moved          | 0%                      | ~60% free                         | cron load off gateway|
+| LLM tokens per cron fire                          | ~full Opus context boot | 0 (deterministic crons)           | **100% reduction**   |
+| Gateway CPU headroom with ~14 crons moved         | 0%                      | ~60% free                         | cron load off gateway|
 | Aborted job status lag (timeout/cancel/lock-loss) | up to 30s               | immediate `failJob` call          | **deterministic**    |
 | Shell submission surfaces                         | none                    | CLI + trusted `submit_job`        | 2 paths, both gated  |
 | Submission audit trail                            | none                    | JSONL at `~/.gbrain/audit/`       | operational trace    |
@@ -28,9 +28,9 @@ Measured on the new `test/minions-shell.test.ts` (40 unit cases) and `test/e2e/m
 
 The abort-path fix is the quietly-important one. Handlers that use `ctx.signal` for cooperative cancel (sync, embed) now have deterministic status flips instead of waiting for the stall sweep. Shell jobs get reliable timeout semantics for the first time: `cmd: 'sleep 30', timeout_ms: 2000` hits `dead` at ~2100ms instead of ~32000ms.
 
-### What this means for Wintermute operators
+### What this means for OpenClaw operators
 
-Start a shell-capable worker: `GBRAIN_ALLOW_SHELL_JOBS=1 gbrain jobs work`. Rewrite crontab entries to submit shell jobs instead of running scripts inline on the gateway: `gbrain jobs submit shell --params '{"cmd":"node fetch.mjs","cwd":"/data"}' --max-attempts 3 --timeout-ms 300000`. On Postgres, one persistent worker claims each job in turn. On PGLite, every crontab invocation adds `--follow` for inline execution because PGLite doesn't support the worker daemon. Either way, your gateway CPU stops pinning at 100% and Garry's live messages stop being blocked by batch processing. See `docs/guides/minions-shell-jobs.md` for the full recipes.
+Start a shell-capable worker: `GBRAIN_ALLOW_SHELL_JOBS=1 gbrain jobs work`. Rewrite crontab entries to submit shell jobs instead of running scripts inline on the gateway: `gbrain jobs submit shell --params '{"cmd":"node fetch.mjs","cwd":"/data"}' --max-attempts 3 --timeout-ms 300000`. On Postgres, one persistent worker claims each job in turn. On PGLite, every crontab invocation adds `--follow` for inline execution because PGLite doesn't support the worker daemon. Either way, your gateway CPU stops pinning at 100% and your live messages stop getting blocked by batch processing. See `docs/guides/minions-shell-jobs.md` for the full recipes.
 
 ### Itemized changes
 
