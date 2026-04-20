@@ -84,8 +84,8 @@ VIEWING
 
 NOTES
   Submitting subagent jobs is trusted-only; MCP submitters receive
-  permission_denied. The worker must have GBRAIN_ALLOW_LLM_JOBS=1 and
-  ANTHROPIC_API_KEY set, or submitted jobs sit in 'waiting' forever.
+  permission_denied. The worker needs ANTHROPIC_API_KEY set, or the
+  first LLM turn of a claimed job fails.
 `);
 }
 

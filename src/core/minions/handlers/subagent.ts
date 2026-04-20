@@ -114,7 +114,8 @@ interface PersistedToolExec {
 /**
  * Build a subagent handler bound to a specific engine. `registerBuiltin
  * Handlers` wires this up as `worker.register('subagent', handler)` at
- * worker startup, gated by GBRAIN_ALLOW_LLM_JOBS.
+ * worker startup. Always registered — `ANTHROPIC_API_KEY` is the natural
+ * cost gate and `PROTECTED_JOB_NAMES` gates submission.
  */
 export function makeSubagentHandler(deps: SubagentDeps) {
   const engine = deps.engine;

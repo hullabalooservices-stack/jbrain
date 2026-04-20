@@ -39,7 +39,7 @@ Credit: shell-jobs (v0.14) established every pattern v0.15 reuses — handler si
 **New capability: `gbrain agent` CLI**
 - `gbrain agent run <prompt> [--subagent-def|--model|--max-turns|--tools|--timeout-ms|--fanout-manifest|--follow|--detach]` — submits a subagent job (or fan-out of N subagents + aggregator) under the trusted-submit flag. Follow mode tails status + logs until terminal; detach prints the job id and exits. Ctrl-C detaches (job keeps running), does not cancel.
 - `gbrain agent logs <job_id> [--follow] [--since ISO-or-relative]` — merges the JSONL heartbeat audit with persisted `subagent_messages` into one chronological timeline. `--since 5m` / `1h` / `2d` shorthand supported. Transcript tail renders the full message + tool tree only after the job is terminal.
-- Gated by `GBRAIN_ALLOW_LLM_JOBS=1` on the worker, matching the shell-jobs opt-in shape. Submitted jobs sit in `waiting` until a qualified worker claims them.
+- Always registered on the worker (no separate env flag). `ANTHROPIC_API_KEY` is the natural cost gate — no key, the SDK call fails immediately. Who-can-submit is already gated by `PROTECTED_JOB_NAMES` + `TrustedSubmitOpts` so only the trusted-CLI path can insert `subagent` / `subagent_aggregator` rows.
 
 **New durability primitives**
 - `src/core/minions/handlers/subagent.ts` — the LLM-loop handler. Two-phase tool persistence, replay reconciliation for mid-dispatch crashes, dual-signal abort (`ctx.signal` + `ctx.shutdownSignal`), Anthropic prompt caching on system + tool defs, injectable `MessagesClient` for mocking.

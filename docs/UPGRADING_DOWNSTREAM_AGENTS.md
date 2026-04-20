@@ -365,22 +365,23 @@ type in Minions, and a plugin contract for host-repo subagent defs. None of the
 existing skills need surgery. The question for downstream agents is *how* to
 adopt the new runtime, not how to patch around a breaking change.
 
-### 1. Opt in on the worker
+### 1. Run a worker with an Anthropic key
 
-The subagent handlers (`subagent` and `subagent_aggregator`) are protected names
-and the worker registers them only when explicitly enabled. Treat this as a
-cost decision — the handler calls the Anthropic API, so flip the flag only on
-workers you want paying those bills.
+The subagent handlers (`subagent` and `subagent_aggregator`) are always
+registered on the worker. No separate opt-in flag — `ANTHROPIC_API_KEY` is
+the natural cost gate (no key, the SDK call fails on the first turn), and
+who-can-submit is already protected (`PROTECTED_JOB_NAMES` + trusted-submit:
+MCP callers get `permission_denied`; only `gbrain agent run` can insert
+these rows).
 
 ```bash
-GBRAIN_ALLOW_LLM_JOBS=1 ANTHROPIC_API_KEY=sk-ant-... gbrain jobs work
+ANTHROPIC_API_KEY=sk-ant-... gbrain jobs work
 ```
 
-Worker startup prints one of:
+Worker startup prints:
 
 ```
-[minion worker] subagent handlers enabled (GBRAIN_ALLOW_LLM_JOBS=1)
-[minion worker] subagent handlers disabled (set GBRAIN_ALLOW_LLM_JOBS=1 to enable)
+[minion worker] subagent handlers enabled
 ```
 
 ### 2. Ship your subagents as a plugin (Wintermute + similar)

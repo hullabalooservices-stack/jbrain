@@ -541,41 +541,36 @@ export async function registerBuiltinHandlers(worker: MinionWorker, engine: Brai
     process.stderr.write('[minion worker] shell handler disabled (set GBRAIN_ALLOW_SHELL_JOBS=1 to enable)\n');
   }
 
-  // v0.15 subagent handlers: same default-closed opt-in shape as shell jobs.
-  // The subagent loop calls the Anthropic API, so enabling it on a worker
-  // is a cost decision (and requires ANTHROPIC_API_KEY). Disabled by default
-  // so an operator who didn't opt in can't be surprised by a bill.
-  //
-  // Plugin definitions also load here (GBRAIN_PLUGIN_PATH). We load them
-  // regardless of the LLM-jobs flag so `gbrain agent run` outside the
-  // worker can still inspect which subagents are registered, but only the
-  // worker consumes them at dispatch time.
-  if (process.env.GBRAIN_ALLOW_LLM_JOBS === '1') {
-    const { makeSubagentHandler } = await import('../core/minions/handlers/subagent.ts');
-    const { subagentAggregatorHandler } = await import('../core/minions/handlers/subagent-aggregator.ts');
-    worker.register('subagent', makeSubagentHandler({ engine }));
-    worker.register('subagent_aggregator', subagentAggregatorHandler);
-    process.stderr.write('[minion worker] subagent handlers enabled (GBRAIN_ALLOW_LLM_JOBS=1)\n');
+  // v0.15 subagent handlers: always-on. Unlike shell (which needs an env
+  // flag because of RCE surface), subagent only calls the Anthropic API
+  // with the operator's own ANTHROPIC_API_KEY — no key, the SDK call
+  // fails immediately. Who-can-submit is already gated by
+  // PROTECTED_JOB_NAMES + TrustedSubmitOpts (MCP can't submit subagent
+  // jobs; only the CLI path with allowProtectedSubmit can). No separate
+  // cost-ceremony env flag needed.
+  const { makeSubagentHandler } = await import('../core/minions/handlers/subagent.ts');
+  const { subagentAggregatorHandler } = await import('../core/minions/handlers/subagent-aggregator.ts');
+  worker.register('subagent', makeSubagentHandler({ engine }));
+  worker.register('subagent_aggregator', subagentAggregatorHandler);
+  process.stderr.write('[minion worker] subagent handlers enabled\n');
 
-    // Plugin discovery — one line per discovered plugin (mirrors the
-    // openclaw-seam startup line convention from v0.11+).
-    try {
-      const { loadPluginsFromEnv } = await import('../core/minions/plugin-loader.ts');
-      const { BRAIN_TOOL_ALLOWLIST } = await import('../core/minions/tools/brain-allowlist.ts');
-      const validNames = new Set<string>();
-      for (const n of BRAIN_TOOL_ALLOWLIST) validNames.add(`brain_${n}`);
-      const loaded = loadPluginsFromEnv({ validAgentToolNames: validNames });
-      for (const w of loaded.warnings) process.stderr.write(w + '\n');
-      for (const p of loaded.plugins) {
-        process.stderr.write(
-          `[plugin-loader] loaded '${p.manifest.name}' v${p.manifest.version} (${p.subagents.length} subagents)\n`,
-        );
-      }
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      process.stderr.write(`[plugin-loader] discovery failed: ${msg}\n`);
+  // Plugin discovery — one line per discovered plugin (mirrors the
+  // openclaw-seam startup line convention from v0.11+). Loaded
+  // unconditionally; empty GBRAIN_PLUGIN_PATH is a no-op.
+  try {
+    const { loadPluginsFromEnv } = await import('../core/minions/plugin-loader.ts');
+    const { BRAIN_TOOL_ALLOWLIST } = await import('../core/minions/tools/brain-allowlist.ts');
+    const validNames = new Set<string>();
+    for (const n of BRAIN_TOOL_ALLOWLIST) validNames.add(`brain_${n}`);
+    const loaded = loadPluginsFromEnv({ validAgentToolNames: validNames });
+    for (const w of loaded.warnings) process.stderr.write(w + '\n');
+    for (const p of loaded.plugins) {
+      process.stderr.write(
+        `[plugin-loader] loaded '${p.manifest.name}' v${p.manifest.version} (${p.subagents.length} subagents)\n`,
+      );
     }
-  } else {
-    process.stderr.write('[minion worker] subagent handlers disabled (set GBRAIN_ALLOW_LLM_JOBS=1 to enable)\n');
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    process.stderr.write(`[plugin-loader] discovery failed: ${msg}\n`);
   }
 }
