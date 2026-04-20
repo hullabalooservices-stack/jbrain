@@ -13,6 +13,54 @@ let connectedUrl: string | null = null;
  */
 const DEFAULT_POOL_SIZE_FALLBACK = 10;
 
+/**
+ * Well-known PgBouncer transaction-pooling ports. When the connection URL
+ * targets one of these ports, prepared statements are disabled automatically
+ * because transaction-mode PgBouncer can route successive queries to different
+ * backend connections, breaking connection-scoped prepared statements.
+ *
+ * Override with `GBRAIN_PREPARE=true` or `?prepare=true` in the URL to force
+ * prepared statements even on these ports.
+ */
+const PGBOUNCER_PORTS = new Set(['6543', '5432' /* Supabase pooler, common alt */]);
+// Only 6543 is auto-detected; 5432 could be direct Postgres. Be conservative.
+const AUTO_DETECT_PORTS = new Set(['6543']);
+
+/**
+ * Determine whether to disable prepared statements.
+ *
+ * Precedence:
+ *   1. `GBRAIN_PREPARE` env var (explicit override)
+ *   2. `?prepare=` query param in the URL (explicit per-URL)
+ *   3. Auto-detect: port 6543 → disable (Supabase PgBouncer convention)
+ *   4. Default: leave undefined (postgres.js default = enabled)
+ */
+export function resolvePrepare(url: string): boolean | undefined {
+  // 1. Env var override
+  const envPrepare = process.env.GBRAIN_PREPARE;
+  if (envPrepare === 'false' || envPrepare === '0') return false;
+  if (envPrepare === 'true' || envPrepare === '1') return true;
+
+  // 2. URL query param (postgres.js already handles this, but we check
+  //    explicitly so we can log the auto-detect decision accurately)
+  try {
+    const parsed = new URL(url.replace(/^postgres(ql)?:\/\//, 'http://'));
+    const urlPrepare = parsed.searchParams.get('prepare');
+    if (urlPrepare === 'false') return false;
+    if (urlPrepare === 'true') return true;
+
+    // 3. Auto-detect PgBouncer transaction mode via port
+    if (AUTO_DETECT_PORTS.has(parsed.port)) {
+      return false;
+    }
+  } catch {
+    // URL parse failure — don't guess, use default
+  }
+
+  // 4. Default: let postgres.js decide (prepared statements enabled)
+  return undefined;
+}
+
 export function resolvePoolSize(explicit?: number): number {
   if (typeof explicit === 'number' && explicit > 0) return explicit;
   const raw = process.env.GBRAIN_POOL_SIZE;
@@ -53,7 +101,8 @@ export async function connect(config: EngineConfig): Promise<void> {
   }
 
   try {
-    sql = postgres(url, {
+    const prepare = resolvePrepare(url);
+    const opts: Record<string, unknown> = {
       max: resolvePoolSize(),
       idle_timeout: 20,
       connect_timeout: 10,
@@ -61,7 +110,15 @@ export async function connect(config: EngineConfig): Promise<void> {
         // Register pgvector type
         bigint: postgres.BigInt,
       },
-    });
+    };
+    // Only set prepare when we have an explicit decision; undefined = postgres.js default
+    if (typeof prepare === 'boolean') {
+      opts.prepare = prepare;
+      if (!prepare) {
+        console.warn('[gbrain] Prepared statements disabled (PgBouncer transaction pooling detected on port 6543). Override with GBRAIN_PREPARE=true if using session mode.');
+      }
+    }
+    sql = postgres(url, opts);
 
     // Test connection
     await sql`SELECT 1`;

@@ -221,6 +221,37 @@ export async function runDoctor(engine: BrainEngine | null, args: string[], dbSo
     checks.push({ name: 'pgvector', status: 'warn', message: 'Could not check pgvector extension' });
   }
 
+  // 4b. PgBouncer / prepared statement compatibility
+  try {
+    const { resolvePrepare } = await import('../core/db.ts');
+    const config = (await import('../core/config.ts')).loadConfig();
+    const url = config?.database_url || '';
+    const prepare = resolvePrepare(url);
+    if (prepare === false) {
+      checks.push({
+        name: 'pgbouncer_prepare',
+        status: 'ok',
+        message: 'Prepared statements disabled (PgBouncer-safe)',
+      });
+    } else {
+      // Check if we're on a PgBouncer port but prepare is NOT disabled
+      try {
+        const parsed = new URL(url.replace(/^postgres(ql)?:\/\//, 'http://'));
+        if (parsed.port === '6543') {
+          checks.push({
+            name: 'pgbouncer_prepare',
+            status: 'warn',
+            message: 'Port 6543 (PgBouncer) detected but prepared statements are enabled. ' +
+              'This causes "prepared statement does not exist" errors under concurrent load. ' +
+              'Fix: set GBRAIN_PREPARE=false or add ?prepare=false to the connection URL.',
+          });
+        }
+      } catch { /* URL parse failure, skip */ }
+    }
+  } catch {
+    // Best-effort, don't fail doctor
+  }
+
   // 5. RLS
   try {
     const sql = db.getConnection();
