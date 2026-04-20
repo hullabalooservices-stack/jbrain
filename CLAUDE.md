@@ -68,7 +68,11 @@ strict behavior when unset.
 - `src/commands/migrations/` — TS migration registry (compiled into the binary; no filesystem walk of `skills/migrations/*.md` needed at runtime). `index.ts` lists migrations in semver order. `v0_11_0.ts` = Minions adoption orchestrator (8 phases). `v0_12_0.ts` = Knowledge Graph auto-wire orchestrator (5 phases: schema → config check → backfill links → backfill timeline → verify). `phaseASchema` has a 600s timeout (bumped from 60s in v0.12.1 for duplicate-heavy brains). `v0_12_2.ts` = JSONB double-encode repair orchestrator (4 phases: schema → repair-jsonb → verify → record). All orchestrators are idempotent and resumable from `partial` status.
 - `src/commands/repair-jsonb.ts` — `gbrain repair-jsonb [--dry-run] [--json]`: rewrites `jsonb_typeof='string'` rows in place across 5 affected columns (pages.frontmatter, raw_data.data, ingest_log.pages_updated, files.metadata, page_versions.frontmatter). Fixes v0.12.0 double-encode bug on Postgres; PGLite no-ops. Idempotent.
 - `src/commands/orphans.ts` — `gbrain orphans [--json] [--count] [--include-pseudo]`: surfaces pages with zero inbound wikilinks, grouped by domain. Auto-generated/raw/pseudo pages filtered by default. Also exposed as `find_orphans` MCP operation. Shipped in v0.12.3 (contributed by @knee5).
-- `src/commands/doctor.ts` — `gbrain doctor [--json] [--fast] [--fix] [--dry-run]`: health checks. v0.12.3 adds two reliability detection checks: `jsonb_integrity` (scans pages.frontmatter, raw_data.data, ingest_log.pages_updated, files.metadata for `jsonb_typeof='string'` rows left over from v0.12.0) and `markdown_body_completeness` (flags pages whose compiled_truth is <30% of raw source when raw has multiple H2/H3 boundaries). Fix hints point at `gbrain repair-jsonb` and `gbrain sync --force`. v0.14.1: `--fix` delegates inlined cross-cutting rules to `> **Convention:** see [path](path).` callouts (pipes DRY violations into `src/core/dry-fix.ts`); `--fix --dry-run` previews without writing.
+- `src/commands/doctor.ts` — `gbrain doctor [--json] [--fast] [--fix] [--dry-run]`: health checks. v0.12.3 adds two reliability detection checks: `jsonb_integrity` (v0.14.2: scans 5 targets including `page_versions.frontmatter` to match `repair-jsonb`'s surface) and `markdown_body_completeness` (flags pages whose compiled_truth is <30% of raw source when raw has multiple H2/H3 boundaries). Fix hints point at `gbrain repair-jsonb` and `gbrain sync --force`. v0.14.1: `--fix` delegates inlined cross-cutting rules to `> **Convention:** see [path](path).` callouts. v0.14.2: every DB check is wrapped in a progress phase; `markdown_body_completeness` runs under a 1s heartbeat timer so 10+ min scans are observable on 50K-page brains.
+- `src/core/progress.ts` — Shared bulk-action progress reporter. Writes to stderr. Modes: `auto` (TTY: `\r`-rewriting; non-TTY: plain lines), `human`, `json` (JSONL), `quiet`. Rate-gated by `minIntervalMs` and `minItems`. `startHeartbeat(reporter, note)` helper for single long queries. `child()` composes phase paths. Singleton SIGINT/SIGTERM coordinator emits `abort` events for every live phase. EPIPE defense on both sync throws and stream `'error'` events. Zero dependencies. Introduced in v0.14.2.
+- `src/core/cli-options.ts` — Global CLI flag parser. `parseGlobalFlags(argv)` returns `{cliOpts, rest}` with `--quiet` / `--progress-json` / `--progress-interval=<ms>` stripped. `getCliOptions()` / `setCliOptions()` expose a module-level singleton so commands reach the resolved flags without parameter threading. `cliOptsToProgressOptions()` maps to reporter options. `childGlobalFlags()` returns the flag suffix to append to `execSync('gbrain ...')` calls in migration orchestrators. `OperationContext.cliOpts` extends shared-op dispatch for MCP callers.
+- `scripts/check-progress-to-stdout.sh` — CI guard against regressing to `\r`-on-stdout progress. Wired into `bun run test` via `scripts/check-progress-to-stdout.sh && bun test` in package.json.
+- `docs/progress-events.md` — Canonical JSON event schema reference. Stable from v0.14.2, additive only.
 - `src/core/markdown.ts` — Frontmatter parsing + body splitter. `splitBody` requires an explicit timeline sentinel (`<!-- timeline -->`, `--- timeline ---`, or `---` immediately before `## Timeline`/`## History`). Plain `---` in body text is a markdown horizontal rule, not a separator. `inferType` auto-types `/wiki/analysis/` → analysis, `/wiki/guides/` → guide, `/wiki/hardware/` → hardware, `/wiki/architecture/` → architecture, `/writing/` → writing (plus the existing people/companies/deals/etc heuristics).
 - `scripts/check-jsonb-pattern.sh` — CI grep guard. Fails the build if anyone reintroduces the `${JSON.stringify(x)}::jsonb` interpolation pattern (which postgres.js v3 double-encodes). Wired into `bun test`.
 - `docs/UPGRADING_DOWNSTREAM_AGENTS.md` — Patches for downstream agent skill forks to apply when upgrading. Each release appends a new section. v0.10.3 includes diffs for brain-ops, meeting-ingestion, signal-detector, enrich.
@@ -273,6 +277,38 @@ testing, soul-audit, webhook-transforms, data-research, minion-orchestrator.
 **Conventions:** `skills/conventions/` has cross-cutting rules (quality, brain-first,
 model-routing, test-before-bulk, cross-modal). `skills/_brain-filing-rules.md` and
 `skills/_output-rules.md` are shared references.
+
+## Bulk-action progress reporting
+
+All bulk commands (doctor, embed, import, export, sync, extract, migrate,
+repair-jsonb, orphans, check-backlinks, lint, integrity auto, eval, files
+sync, and apply-migrations) stream progress through the shared reporter
+at `src/core/progress.ts`. Agents get heartbeats within 1 second of every
+iteration regardless of how slow the underlying work is.
+
+Rules:
+- Progress always writes to **stderr**. Stdout stays clean for data output
+  (`--json` payloads, final summaries, JSON action events from `extract`).
+- Non-TTY default: plain one-line-per-event human text. JSON requires the
+  explicit `--progress-json` flag.
+- Global flags (`--quiet`, `--progress-json`, `--progress-interval=<ms>`)
+  are parsed by `src/core/cli-options.ts` BEFORE command dispatch.
+- Phase names are machine-stable `snake_case.dot.path` (e.g.
+  `doctor.db_checks`, `sync.imports`). Documented in
+  `docs/progress-events.md`; additive changes only.
+- `scripts/check-progress-to-stdout.sh` is a CI guard that fails the build
+  if any new code writes `\r` progress to stdout. Wired into `bun run test`.
+- Minion handlers pass `job.updateProgress` as the `onProgress` callback
+  to core functions (DB-backed primary progress channel); stderr from
+  `jobs work` stays coarse for daemon liveness only.
+
+When wiring a new bulk command: `import { createProgress } from '../core/progress.ts'`
+and `import { getCliOptions, cliOptsToProgressOptions } from '../core/cli-options.ts'`.
+Create a reporter with `createProgress(cliOptsToProgressOptions(getCliOptions()))`,
+`start(phase, total?)` before the loop, `tick()` inside it, `finish()` after.
+For single long-running queries, use `startHeartbeat(reporter, note)` with a
+try/finally to guarantee cleanup. Never call `process.stdout.write('\r...')`
+in bulk paths, the CI guard will fail the build.
 
 ## Build
 
