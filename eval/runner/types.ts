@@ -39,6 +39,30 @@ export interface Page {
   frontmatter?: Record<string, unknown>;
 }
 
+/**
+ * PublicPage — the shape adapters SEE at runtime (Day 9 sealed-qrels).
+ *
+ * Multi-adapter.ts calls `sanitizePage()` before passing the array to
+ * `adapter.init()`. The sanitized copy has NO `_facts`, NO `frontmatter`,
+ * NO arbitrary keys — only the five public fields below. Adapters that
+ * try `(page as any)._facts` get `undefined` instead of the gold object.
+ *
+ * This is soft enforcement (a misbehaving adapter could still open
+ * `eval/data/gold/*.json` from disk). Hard enforcement via process
+ * isolation ships with BrainBench v2's Docker sandbox.
+ */
+export type PublicPage = Pick<Page, 'slug' | 'type' | 'title' | 'compiled_truth' | 'timeline'>;
+
+export function sanitizePage(p: Page): PublicPage {
+  return {
+    slug: p.slug,
+    type: p.type,
+    title: p.title,
+    compiled_truth: p.compiled_truth,
+    timeline: p.timeline,
+  };
+}
+
 // ─── Query ───────────────────────────────────────────────────────────
 
 export type Tier =
@@ -87,6 +111,37 @@ export interface Query {
   known_failure_modes?: string[];
   author?: string;                  // set for Tier 5.5 externally-authored
   tags?: string[];                  // 'identity-collision', 'contradiction', etc.
+}
+
+/**
+ * PublicQuery — the shape adapters SEE at runtime (Day 9 sealed-qrels).
+ *
+ * Multi-adapter.ts calls `sanitizeQuery()` before passing each query to
+ * `adapter.query()`. The sanitized copy strips the `gold` field entirely,
+ * so an adapter cannot read `q.gold.relevant` to cheat. Scorers keep the
+ * full Query shape and compare adapter output against gold after the call.
+ *
+ * Adapters that need as_of_date for temporal queries still get it —
+ * PublicQuery keeps every field EXCEPT gold.
+ */
+export type PublicQuery = Omit<Query, 'gold'>;
+
+export function sanitizeQuery(q: Query): PublicQuery {
+  // Build a new object to sever the reference chain. Using spread + delete
+  // would leave the `gold` key on the prototype-shape in some engines;
+  // explicit enumeration is the safest pattern.
+  const out: PublicQuery = {
+    id: q.id,
+    tier: q.tier,
+    text: q.text,
+    expected_output_type: q.expected_output_type,
+  };
+  if (q.as_of_date !== undefined) out.as_of_date = q.as_of_date;
+  if (q.acceptable_variants !== undefined) out.acceptable_variants = q.acceptable_variants;
+  if (q.known_failure_modes !== undefined) out.known_failure_modes = q.known_failure_modes;
+  if (q.author !== undefined) out.author = q.author;
+  if (q.tags !== undefined) out.tags = q.tags;
+  return out;
 }
 
 // ─── RankedDoc ──────────────────────────────────────────────────────

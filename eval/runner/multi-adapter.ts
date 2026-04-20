@@ -26,7 +26,7 @@ import { RipgrepBm25Adapter } from './adapters/ripgrep-bm25.ts';
 import { VectorOnlyAdapter } from './adapters/vector-only.ts';
 import { HybridNoGraphAdapter } from './adapters/hybrid-nograph.ts';
 import type { Adapter, Page, Query, RankedDoc } from './types.ts';
-import { precisionAtK, recallAtK } from './types.ts';
+import { precisionAtK, recallAtK, sanitizePage, sanitizeQuery } from './types.ts';
 
 const TOP_K = 5;
 
@@ -331,13 +331,19 @@ async function scoreOneRun(
   pages: Page[],
   queries: Query[],
 ): Promise<RunResult> {
-  const state = await adapter.init(pages, { name: adapter.name });
+  // Day 9 sealed qrels enforcement (codex fix #1, #2, #3):
+  // Build sanitized copies with no `_facts` and no `gold` fields before
+  // handing them to the adapter. The scorer retains the full Query shape
+  // (including gold.relevant) to compute precision/recall below.
+  const publicPages = pages.map(sanitizePage);
+  const state = await adapter.init(publicPages, { name: adapter.name });
   let totalP = 0;
   let totalR = 0;
   let totalCorrect = 0;
   let totalExpected = 0;
   for (const q of queries) {
-    const results = await adapter.query(q, state);
+    const publicQ = sanitizeQuery(q);
+    const results = await adapter.query(publicQ as unknown as Query, state);
     const relevant = new Set(q.gold.relevant ?? []);
     totalP += precisionAtK(results, relevant, TOP_K);
     totalR += recallAtK(results, relevant, TOP_K);
