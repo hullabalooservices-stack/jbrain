@@ -106,6 +106,36 @@ describe('cli.ts global-flag stripping (integration)', () => {
   });
 });
 
+describe('CLI integration: progress streams to the right channel', () => {
+  const CLI = join(import.meta.dir, '..', 'src', 'cli.ts');
+
+  test('gbrain --progress-json --version emits only the version on stdout', () => {
+    // `version` is a single-shot command that goes through the main()
+    // dispatch path. We want to confirm --progress-json doesn't force
+    // stray progress onto stdout for commands that don't use a reporter.
+    const res = spawnSync('bun', [CLI, '--progress-json', '--version'], {
+      encoding: 'utf-8',
+      env: { ...process.env, NO_COLOR: '1' },
+    });
+    expect(res.status).toBe(0);
+    expect(res.stdout.trim()).toMatch(/^gbrain /);
+    // No JSON progress object should end up on stdout.
+    expect(res.stdout).not.toContain('"event":"start"');
+  });
+
+  test('gbrain --quiet skillpack-check returns exit code with no stdout', () => {
+    // Regression guard for the flag-collision that skillpack-check hit
+    // when --quiet briefly passed through argv. Now it reads the singleton.
+    const res = spawnSync('bun', [CLI, '--quiet', 'skillpack-check'], {
+      encoding: 'utf-8',
+      env: { ...process.env, NO_COLOR: '1' },
+    });
+    // Exit may be 0 or 1 depending on whether a brain is configured;
+    // what matters is stdout stays empty.
+    expect(res.stdout).toBe('');
+  });
+});
+
 describe('cliOptsToProgressOptions', () => {
   test('--quiet → quiet mode', () => {
     const opts = cliOptsToProgressOptions({ quiet: true, progressJson: false, progressInterval: 1000 });
