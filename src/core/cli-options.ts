@@ -124,3 +124,24 @@ export function getCliOptions(): CliOptions {
 export function _resetCliOptionsForTest(): void {
   activeCliOptions = { ...DEFAULT_CLI_OPTIONS };
 }
+
+/**
+ * Build the global-flag suffix to append to child `gbrain …` subprocess
+ * commands so children inherit the parent's progress-mode.
+ *
+ * Returns a string ready to concat onto an execSync command string, with
+ * a leading space when non-empty. E.g. " --progress-json --quiet".
+ *
+ * Empty string when nothing to propagate (so the child's behavior is
+ * unchanged for the common no-flag case).
+ */
+export function childGlobalFlags(cliOpts?: CliOptions): string {
+  const opts = cliOpts ?? activeCliOptions;
+  const parts: string[] = [];
+  if (opts.quiet) parts.push('--quiet');
+  if (opts.progressJson) parts.push('--progress-json');
+  if (opts.progressInterval !== DEFAULT_CLI_OPTIONS.progressInterval) {
+    parts.push(`--progress-interval=${opts.progressInterval}`);
+  }
+  return parts.length > 0 ? ' ' + parts.join(' ') : '';
+}
