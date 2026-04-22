@@ -112,6 +112,48 @@ describe('migrate v17 — pages_source_id_composite_unique', () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────
+// v0.17.0 — v19 files_source_id_page_id_ledger (Step 7, Lane E)
+// ─────────────────────────────────────────────────────────────────
+describe('migrate v19 — files_source_id_page_id_ledger', () => {
+  const v19 = MIGRATIONS.find(m => m.version === 19);
+
+  test('v19 exists as handler-only (Postgres files table, PGLite no-op)', () => {
+    expect(v19).toBeDefined();
+    expect(v19!.name).toBe('files_source_id_page_id_ledger');
+    expect(v19!.sql).toBe('');
+    expect(v19!.handler).toBeDefined();
+  });
+
+  test('v19 handler gates on engine.kind for PGLite (no files table)', () => {
+    expect(v19!.handler!.toString()).toMatch(/engine\.kind\s*===\s*["']pglite["']/);
+  });
+
+  test('v19 adds files.source_id + files.page_id + ledger creation', () => {
+    const body = v19!.handler!.toString();
+    expect(body).toContain('ALTER TABLE files ADD COLUMN IF NOT EXISTS source_id');
+    expect(body).toContain('ALTER TABLE files ADD COLUMN IF NOT EXISTS page_id');
+    expect(body).toContain('CREATE TABLE IF NOT EXISTS file_migration_ledger');
+  });
+
+  test('v19 backfills files.page_id scoped to default source (Codex fix)', () => {
+    const body = v19!.handler!.toString();
+    // Without source_id='default' scope, the JOIN could hit the wrong
+    // page after new sources with duplicate slugs are added.
+    expect(body).toContain('UPDATE files f');
+    expect(body).toContain("p.source_id = 'default'");
+  });
+
+  test('v19 ledger PK is file_id (Codex: two sources can share old path)', () => {
+    const body = v19!.handler!.toString();
+    expect(body).toContain('file_id           INTEGER PRIMARY KEY');
+    // State machine values all present.
+    for (const state of ['pending', 'copy_done', 'db_updated', 'complete', 'failed']) {
+      expect(body).toContain(`'${state}'`);
+    }
+  });
+});
+
 describe('migrate — ordering guarantee (v15 must NOT be skipped by v16)', () => {
   test('runMigrations sorts by version ascending', async () => {
     // Regression: if v16 preceded v15 in the MIGRATIONS array, the iterator

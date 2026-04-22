@@ -252,13 +252,18 @@ CREATE TABLE IF NOT EXISTS mcp_request_log (
 -- ============================================================
 -- files: binary attachments stored in Supabase Storage
 -- ============================================================
--- NOTE (v0.17.0 Step 1): files.page_slug → page_id rewrite + source_id
--- + file_migration_ledger all land in v17 alongside Step 7 (storage
--- backfill). Keeping the existing shape here so the current engine
--- continues to work.
+-- v0.17.0 Step 7: files gains source_id + page_id alongside the
+-- legacy page_slug (kept for backward compat until a later release).
+-- The file_migration_ledger below drives the storage object rewrite.
+-- page_slug FK had ON UPDATE CASCADE — removed because slugs are no
+-- longer global (composite UNIQUE) so CASCADE on-update is ambiguous.
+-- ON DELETE SET NULL is preserved via both page_slug and page_id.
 CREATE TABLE IF NOT EXISTS files (
   id           SERIAL PRIMARY KEY,
-  page_slug    TEXT   REFERENCES pages(slug) ON DELETE SET NULL ON UPDATE CASCADE,
+  source_id    TEXT   NOT NULL DEFAULT 'default'
+               REFERENCES sources(id) ON DELETE CASCADE,
+  page_slug    TEXT,
+  page_id      INTEGER REFERENCES pages(id) ON DELETE SET NULL,
   filename     TEXT   NOT NULL,
   storage_path TEXT   NOT NULL,
   mime_type    TEXT,
@@ -273,7 +278,29 @@ CREATE TABLE IF NOT EXISTS files (
 ALTER TABLE files DROP COLUMN IF EXISTS storage_url;
 
 CREATE INDEX IF NOT EXISTS idx_files_page ON files(page_slug);
+CREATE INDEX IF NOT EXISTS idx_files_page_id ON files(page_id);
+CREATE INDEX IF NOT EXISTS idx_files_source_id ON files(source_id);
 CREATE INDEX IF NOT EXISTS idx_files_hash ON files(content_hash);
+
+-- ============================================================
+-- file_migration_ledger (v0.17.0 Step 7)
+-- Drives the storage-object rewrite performed by the v0_17_0
+-- orchestrator's phase B. Keyed on file_id so two sources can share
+-- an old path during migration without PK collision (Codex second-
+-- pass caught this).
+-- Status state machine: pending → copy_done → db_updated → complete
+-- ============================================================
+CREATE TABLE IF NOT EXISTS file_migration_ledger (
+  file_id           INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+  storage_path_old  TEXT   NOT NULL,
+  storage_path_new  TEXT   NOT NULL,
+  status            TEXT   NOT NULL DEFAULT 'pending',
+  error             TEXT,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT chk_ledger_status CHECK (status IN ('pending','copy_done','db_updated','complete','failed'))
+);
+CREATE INDEX IF NOT EXISTS idx_file_migration_ledger_status
+  ON file_migration_ledger(status) WHERE status != 'complete';
 
 -- ============================================================
 -- Trigger-based search_vector (spans pages + timeline_entries)
@@ -506,6 +533,7 @@ BEGIN
     ALTER TABLE files ENABLE ROW LEVEL SECURITY;
     ALTER TABLE minion_jobs ENABLE ROW LEVEL SECURITY;
     ALTER TABLE sources ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE file_migration_ledger ENABLE ROW LEVEL SECURITY;
     RAISE NOTICE 'RLS enabled on all tables (role % has BYPASSRLS)', current_user;
   ELSE
     RAISE WARNING 'Skipping RLS: role % does not have BYPASSRLS privilege. Run as postgres role to enable.', current_user;

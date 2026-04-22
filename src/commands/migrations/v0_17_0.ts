@@ -42,10 +42,6 @@ function phaseASchema(opts: OrchestratorOpts): OrchestratorPhaseResult {
 
 async function phaseBBackfillStorage(opts: OrchestratorOpts): Promise<OrchestratorPhaseResult> {
   if (opts.dryRun) return { name: 'backfill_storage', status: 'skipped', detail: 'dry-run' };
-  // Step 1 (v16) hasn't created file_migration_ledger yet — that lands in
-  // Step 7 alongside the page_id FK rewrite. Phase B is a no-op until
-  // the ledger table exists. Probe it here so future step-7 merge flips
-  // the behavior without editing this function.
   try {
     const config = loadConfig();
     if (!config) return { name: 'backfill_storage', status: 'skipped', detail: 'no brain configured' };
@@ -65,27 +61,40 @@ async function phaseBBackfillStorage(opts: OrchestratorOpts): Promise<Orchestrat
         return {
           name: 'backfill_storage',
           status: 'skipped',
-          detail: 'file_migration_ledger not yet installed (lands in Step 7)',
+          detail: 'file_migration_ledger not yet installed (run apply-migrations first)',
         };
       }
 
-      // Ledger exists (Step 7 landed). Progress its entries.
-      const ledger = await engine.executeRaw<{ status: string; n: number }>(
-        `SELECT status, COUNT(*)::int AS n FROM file_migration_ledger GROUP BY status`,
-      );
-      const total = ledger.reduce((acc, r) => acc + r.n, 0);
-      if (total === 0) {
+      // Ledger exists. If storage isn't configured, run the dry-run
+      // path — we can still report the ledger state but we can't
+      // COPY objects. Operator then wires storage and re-runs.
+      const storage = config.storage ? await loadStorageBackend(config.storage) : null;
+
+      const { runStorageBackfill } = await import('./v0_17_0-storage-backfill.ts');
+      const report = await runStorageBackfill(engine, storage, { dryRun: !storage });
+
+      if (report.total === 0) {
         return { name: 'backfill_storage', status: 'complete', detail: 'no files to migrate' };
       }
-      const pending = ledger.find(r => r.status !== 'complete')?.n ?? 0;
-      if (pending === 0) {
-        return { name: 'backfill_storage', status: 'complete', detail: `${total} files already migrated` };
+
+      if (report.failed > 0) {
+        return {
+          name: 'backfill_storage',
+          status: 'failed',
+          detail: `${report.failed}/${report.total} files failed: ${report.errors.slice(0, 3).map(e => `#${e.file_id}: ${e.error.slice(0, 60)}`).join('; ')}`,
+        };
       }
-      return {
-        name: 'backfill_storage',
-        status: 'failed',
-        detail: `${pending}/${total} files pending ledger processing; Step 7 storage loader not yet installed`,
-      };
+
+      if (report.skipped > 0 && !storage) {
+        return {
+          name: 'backfill_storage',
+          status: 'skipped',
+          detail: `${report.skipped}/${report.total} files pending; storage backend not configured (wire storage + re-run)`,
+        };
+      }
+
+      const detail = `${report.total} files: ${report.alreadyComplete} already complete, ${report.nowComplete} newly migrated`;
+      return { name: 'backfill_storage', status: 'complete', detail };
     } finally {
       try { await engine.disconnect(); } catch {}
     }
@@ -95,6 +104,16 @@ async function phaseBBackfillStorage(opts: OrchestratorOpts): Promise<Orchestrat
       status: 'failed',
       detail: e instanceof Error ? e.message : String(e),
     };
+  }
+}
+
+async function loadStorageBackend(storageConfig: unknown): Promise<import('../../core/storage.ts').StorageBackend | null> {
+  try {
+    const { createStorage } = await import('../../core/storage.ts');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return await createStorage(storageConfig as any);
+  } catch {
+    return null;
   }
 }
 

@@ -450,6 +450,89 @@ export const MIGRATIONS: Migration[] = [
     },
   },
   {
+    version: 19,
+    name: 'files_source_id_page_id_ledger',
+    // v0.17.0 Step 7 (Lane E) — additive only: adds files.source_id and
+    // files.page_id columns + creates the file_migration_ledger that
+    // drives phase-B storage object rewrites. Does NOT drop page_slug
+    // yet (kept for backward compat; a later release cleans up once the
+    // page_id FK is proven). PGLite has no files table, so this
+    // migration is Postgres-only via a handler gate.
+    //
+    // Ledger PK is file_id (not storage_path_old) — two sources CAN
+    // share an old path during migration, so a composite would be
+    // wrong. Codex second-pass review caught this.
+    //
+    // State machine per row:
+    //   pending → copy_done → db_updated → complete
+    //   any state → failed (with error detail)
+    //
+    // Phase B in the v0_17_0 orchestrator processes `status != complete`
+    // rows. Re-runnable: resumes from whichever state it stopped in.
+    sql: '',
+    handler: async (engine) => {
+      if (engine.kind === 'pglite') return;
+      await engine.runMigration(19, `
+        -- 1a. source_id with DEFAULT 'default' (idempotent)
+        ALTER TABLE files ADD COLUMN IF NOT EXISTS source_id TEXT
+          NOT NULL DEFAULT 'default' REFERENCES sources(id) ON DELETE CASCADE;
+        CREATE INDEX IF NOT EXISTS idx_files_source_id ON files(source_id);
+
+        -- 1b. page_id (nullable; pre-v0.17 files pointed at page_slug
+        --     which was ON DELETE SET NULL, so we keep the same nullable
+        --     semantic — orphaned files are legal).
+        ALTER TABLE files ADD COLUMN IF NOT EXISTS page_id INTEGER
+          REFERENCES pages(id) ON DELETE SET NULL;
+        CREATE INDEX IF NOT EXISTS idx_files_page_id ON files(page_id);
+      `);
+
+      await engine.runMigration(19, `
+        -- 1c. Backfill page_id from existing page_slug. Scoped to
+        --     source_id='default' because pre-v0.17 pages ALL lived in
+        --     the default source. Without this scope, after new sources
+        --     get added mid-migration, the JOIN could hit the wrong
+        --     page (different source, same slug).
+        UPDATE files f
+           SET page_id = p.id
+          FROM pages p
+         WHERE f.page_slug = p.slug
+           AND p.source_id = 'default'
+           AND f.page_id IS NULL;
+      `);
+
+      await engine.runMigration(19, `
+        -- 2. file_migration_ledger — drives the storage object rewrite
+        --    in the v0_17_0 orchestrator's phase B. Seeded from current
+        --    files rows; re-seed is idempotent via NOT EXISTS guard.
+        CREATE TABLE IF NOT EXISTS file_migration_ledger (
+          file_id           INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+          storage_path_old  TEXT   NOT NULL,
+          storage_path_new  TEXT   NOT NULL,
+          status            TEXT   NOT NULL DEFAULT 'pending',
+          error             TEXT,
+          updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+          CONSTRAINT chk_ledger_status CHECK (status IN ('pending','copy_done','db_updated','complete','failed'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_file_migration_ledger_status
+          ON file_migration_ledger(status) WHERE status != 'complete';
+
+        -- Seed the ledger with every existing file. New path prefixes
+        -- source_id so multi-source can land assets under their own
+        -- bucket path without collision.
+        INSERT INTO file_migration_ledger (file_id, storage_path_old, storage_path_new, status)
+        SELECT
+          f.id,
+          f.storage_path,
+          COALESCE(f.source_id, 'default') || '/' || f.storage_path,
+          'pending'
+        FROM files f
+        WHERE NOT EXISTS (
+          SELECT 1 FROM file_migration_ledger l WHERE l.file_id = f.id
+        );
+      `);
+    },
+  },
+  {
     version: 18,
     name: 'links_resolution_type',
     // v0.17.0 Step 4 (Lane B) — adds links.resolution_type column so
