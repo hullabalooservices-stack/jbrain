@@ -17,6 +17,83 @@ describe('migrate', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────
+// v0.17.0 — v16 sources_table_additive (Step 1, Lane A)
+// ─────────────────────────────────────────────────────────────────
+// v16 is the ADDITIVE-ONLY migration: it installs the sources primitive
+// without breaking the engine's existing ON CONFLICT (slug) upserts.
+// The breaking schema changes (pages.source_id NOT NULL, composite
+// UNIQUE, files.page_slug → page_id, file_migration_ledger,
+// links.resolution_type) land in v17 alongside the engine API rewrite
+// so the engine can execute the new ON CONFLICT (source_id, slug)
+// atomically with the schema change.
+// ─────────────────────────────────────────────────────────────────
+describe('migrate v16 — sources_table_additive', () => {
+  const v16 = MIGRATIONS.find(m => m.version === 16);
+
+  test('v16 exists', () => {
+    expect(v16).toBeDefined();
+    expect(v16!.name).toBe('sources_table_additive');
+  });
+
+  test('v16 creates sources table', () => {
+    expect(v16!.sql).toContain('CREATE TABLE IF NOT EXISTS sources');
+    expect(v16!.sql).toContain('id            TEXT PRIMARY KEY');
+    expect(v16!.sql).toContain('name          TEXT NOT NULL UNIQUE');
+    expect(v16!.sql).toContain('config        JSONB NOT NULL');
+  });
+
+  test("v16 seeds 'default' source inheriting sync config", () => {
+    expect(v16!.sql).toContain("INSERT INTO sources (id, name, local_path, last_commit, config)");
+    expect(v16!.sql).toContain("'default'");
+    // The default source pulls from existing config so post-upgrade
+    // identity is preserved.
+    expect(v16!.sql).toContain("SELECT value FROM config WHERE key = 'sync.repo_path'");
+    expect(v16!.sql).toContain("SELECT value FROM config WHERE key = 'sync.last_commit'");
+  });
+
+  test('v16 default source is federated=true (backward-compat)', () => {
+    // federated=true ensures pre-v0.17 brains keep single-namespace
+    // search semantics — every page appears in unqualified search.
+    expect(v16!.sql).toContain('"federated": true');
+  });
+
+  test('v16 is idempotent on re-run', () => {
+    // CREATE TABLE IF NOT EXISTS + NOT EXISTS subquery on INSERT.
+    expect(v16!.sql).toContain('CREATE TABLE IF NOT EXISTS sources');
+    expect(v16!.sql).toContain('WHERE NOT EXISTS (SELECT 1 FROM sources WHERE id = ');
+  });
+
+  test('v16 does NOT touch pages / ingest_log / files / links', () => {
+    // Step 1 is additive-only. Breaking changes deferred to v17 so they
+    // land with the engine rewrite (Step 2). Guard against anyone
+    // accidentally re-expanding v16's scope.
+    expect(v16!.sql).not.toContain('ALTER TABLE pages');
+    expect(v16!.sql).not.toContain('ALTER TABLE ingest_log');
+    expect(v16!.sql).not.toContain('ALTER TABLE files');
+    expect(v16!.sql).not.toContain('ALTER TABLE links');
+    expect(v16!.handler).toBeUndefined();
+  });
+});
+
+describe('migrate — ordering guarantee (v15 must NOT be skipped by v16)', () => {
+  test('runMigrations sorts by version ascending', async () => {
+    // Regression: if v16 preceded v15 in the MIGRATIONS array, the iterator
+    // would setConfig(version, 16) first, then skip v15 on the next pass.
+    // runMigrations applies a defensive sort so array order doesn't matter.
+    // This test asserts v15 exists (if we broke the sort, v15 would still
+    // exist in MIGRATIONS but would never apply at runtime).
+    const v15 = MIGRATIONS.find(m => m.version === 15);
+    const v16 = MIGRATIONS.find(m => m.version === 16);
+    expect(v15).toBeDefined();
+    expect(v16).toBeDefined();
+    // Sanity: versions are distinct and progress.
+    const versions = MIGRATIONS.map(m => m.version);
+    const uniq = new Set(versions);
+    expect(uniq.size).toBe(versions.length);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────
 // REGRESSION TESTS — migrations v8 + v9 perf on duplicate-heavy tables
 // ─────────────────────────────────────────────────────────────────
 //

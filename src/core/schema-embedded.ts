@@ -10,8 +10,49 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ============================================================
+-- sources: multi-repo / multi-brain tenancy (v0.17.0)
+-- ============================================================
+-- A source is a logical brain-within-the-DB: wiki, gstack, yc-media, etc.
+-- Every page/file/ingest_log row carries source_id.
+--
+-- id:         immutable citation key. [a-z0-9-]{1,32} enforced at app layer.
+--             Used in [source:slug] citations, --source flag, wikilink syntax.
+-- name:       mutable display label. Rename via \`gbrain sources rename\`.
+-- local_path: optional git checkout root for filesystem-backed sources.
+-- config:     forward-compat JSONB. Currently used for federation + ACL slot.
+--             { "federated": bool, "access_policy": {...} }
+--             - federated=true (or missing-but-explicit on 'default'):
+--               participates in cross-source default search.
+--             - federated=false (default for new sources):
+--               only searched when explicitly named via --source.
+--             - access_policy: forward-compat slot, no enforcement in v0.17.
+--               Write-side lockdown: mutated only when ctx.remote=false.
+CREATE TABLE IF NOT EXISTS sources (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL UNIQUE,
+  local_path    TEXT,
+  last_commit   TEXT,
+  last_sync_at  TIMESTAMPTZ,
+  config        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Seed the default source. 'default' is federated=true for backward compat
+-- (pre-v0.17 brains behave exactly as before — every page appears in search).
+-- Pre-existing sync.repo_path / sync.last_commit are copied in by the v16
+-- migration, not here; fresh installs have no local_path until \`sources add\`
+-- or the first \`sync\`.
+INSERT INTO sources (id, name, config)
+  VALUES ('default', 'default', '{"federated": true}'::jsonb)
+  ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
 -- pages: the core content table
 -- ============================================================
+-- NOTE (v0.17.0 Step 1): pages.source_id is NOT added yet — it lands in
+-- the v17 migration alongside the engine API rewrite (Step 2), which
+-- replaces ON CONFLICT (slug) with ON CONFLICT (source_id, slug). Dropping
+-- UNIQUE(slug) before the engine is source-aware would break all upserts.
 CREATE TABLE IF NOT EXISTS pages (
   id            SERIAL PRIMARY KEY,
   slug          TEXT    NOT NULL UNIQUE,
@@ -65,6 +106,10 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON content_chunks USING hnsw (em
 -- and a frontmatter-derived edge with the same (from, to, type) tuple coexist.
 -- Reconciliation on put_page filters by (link_source='frontmatter' AND
 -- origin_page_id = written_page) — never touches other pages' edges.
+-- NOTE (v0.17.0 Step 1): links.resolution_type is NOT added yet — it
+-- lands in v17 alongside the link-extraction rewrite (Step 4). The
+-- column is purely informational; adding it now would imply we have a
+-- qualified wikilink parser that produces values for it.
 CREATE TABLE IF NOT EXISTS links (
   id             SERIAL PRIMARY KEY,
   from_page_id   INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
@@ -148,6 +193,9 @@ CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id);
 -- ============================================================
 -- ingest_log
 -- ============================================================
+-- NOTE (v0.17.0 Step 1): ingest_log.source_id is NOT added yet — lands
+-- in v17 alongside the sync rewrite (Step 5), which starts writing
+-- source-scoped entries.
 CREATE TABLE IF NOT EXISTS ingest_log (
   id            SERIAL PRIMARY KEY,
   source_type   TEXT    NOT NULL,
@@ -202,6 +250,10 @@ CREATE TABLE IF NOT EXISTS mcp_request_log (
 -- ============================================================
 -- files: binary attachments stored in Supabase Storage
 -- ============================================================
+-- NOTE (v0.17.0 Step 1): files.page_slug → page_id rewrite + source_id
+-- + file_migration_ledger all land in v17 alongside Step 7 (storage
+-- backfill). Keeping the existing shape here so the current engine
+-- continues to work.
 CREATE TABLE IF NOT EXISTS files (
   id           SERIAL PRIMARY KEY,
   page_slug    TEXT   REFERENCES pages(slug) ON DELETE SET NULL ON UPDATE CASCADE,
@@ -451,6 +503,7 @@ BEGIN
     ALTER TABLE config ENABLE ROW LEVEL SECURITY;
     ALTER TABLE files ENABLE ROW LEVEL SECURITY;
     ALTER TABLE minion_jobs ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE sources ENABLE ROW LEVEL SECURITY;
     RAISE NOTICE 'RLS enabled on all tables (role % has BYPASSRLS)', current_user;
   ELSE
     RAISE WARNING 'Skipping RLS: role % does not have BYPASSRLS privilege. Run as postgres role to enable.', current_user;

@@ -20,8 +20,26 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ============================================================
+-- sources: multi-brain tenancy (v0.17.0). See src/schema.sql for design notes.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sources (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL UNIQUE,
+  local_path    TEXT,
+  last_commit   TEXT,
+  last_sync_at  TIMESTAMPTZ,
+  config        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO sources (id, name, config)
+  VALUES ('default', 'default', '{"federated": true}'::jsonb)
+  ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================
 -- pages: the core content table
 -- ============================================================
+-- v0.17.0 Step 1: pages.source_id is NOT added yet (see src/schema.sql note).
 CREATE TABLE IF NOT EXISTS pages (
   id            SERIAL PRIMARY KEY,
   slug          TEXT    NOT NULL UNIQUE,
@@ -63,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON content_chunks USING hnsw (em
 -- links: cross-references between pages
 -- ============================================================
 -- See src/schema.sql for full design notes on link_source + origin_page_id.
+-- v0.17.0 Step 1: links.resolution_type deferred to v17 (see src/schema.sql).
 CREATE TABLE IF NOT EXISTS links (
   id             SERIAL PRIMARY KEY,
   from_page_id   INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
@@ -141,7 +160,7 @@ CREATE TABLE IF NOT EXISTS page_versions (
 CREATE INDEX IF NOT EXISTS idx_versions_page ON page_versions(page_id);
 
 -- ============================================================
--- ingest_log
+-- ingest_log (v0.17.0 Step 1: source_id deferred to v17, see src/schema.sql)
 -- ============================================================
 CREATE TABLE IF NOT EXISTS ingest_log (
   id            SERIAL PRIMARY KEY,
