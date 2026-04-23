@@ -4,10 +4,10 @@ All notable changes to GBrain will be documented in this file.
 
 ## [0.18.2] - 2026-04-23
 
-## **Migrations survive a crash. Large tables survive Supabase's 2-min ceiling. Heavy migrations stop being a gamble.**
-## **You can now `gbrain doctor --locks` to find and kill the connection blocking your upgrade.**
+## **Migrations survive a crash and Supabase's 2-min ceiling.**
+## **`gbrain doctor --locks` finds the connection blocking your upgrade.**
 
-The v0.18.0 production upgrade shipped a field report of 8 issues — statement timeouts, stale idle connections, a schema version that lied, a cryptic FK dependency error. The original PR #356 fix covered all 8. A codex plan-review pass found 3 more that neither the initial review nor the eng review caught. This release lands the lot.
+The v0.18.0 production upgrade shipped a field report of 8 issues: statement timeouts, stale idle connections, a schema version that lied, a cryptic FK dependency error. The original PR #356 fix covered all 8. A codex plan-review pass found 3 more that neither the initial review nor the eng review caught. This release lands the lot.
 
 The quiet win: if your brain crashes mid-migration on Postgres, it rolls back cleanly now. Before v0.18.2, a process death between migrations 21 and 23 left your `files` table with no FK to `pages` while uploads kept going. The window is closed. DDL either commits entirely or not at all.
 
@@ -32,7 +32,7 @@ The striking number: 3 of the 11 findings in this release came from a second AI 
 
 ### What this means for your workflow
 
-Most users: run `gbrain upgrade`. Nothing else to do. Existing brains at schema v21 or v22 are safe — the old FK stayed intact through the original PR #356 path, and the new atomic commit means a future crash can't leave you stranded.
+Most users: run `gbrain upgrade`. Nothing else to do. Existing brains at schema v21 or v22 are safe, the old FK stayed intact through the original PR #356 path, and the new atomic commit means a future crash can't leave you stranded.
 
 If a migration hits `statement_timeout`, the error message now tells you exactly what to do: `gbrain doctor --locks` to find the blocker, terminate, re-run `gbrain apply-migrations --yes`, verify with `gbrain doctor`. Four commands, top-to-bottom.
 
@@ -42,8 +42,8 @@ Running a 500K-page brain on Supabase? The next migration that touches a hot tab
 
 #### Added
 
-- `gbrain doctor --locks` — lists idle-in-transaction backends older than 5 minutes with PID + `pg_terminate_backend` commands. Exits 1 when blockers found. `--json` emits structured output. Postgres-only; PGLite prints "not applicable".
-- `BrainEngine.withReservedConnection(fn)` — runs callback on a dedicated pool connection. Postgres via `sql.reserve()`, PGLite as a pass-through.
+- `gbrain doctor --locks`: lists idle-in-transaction backends older than 5 minutes with PID + `pg_terminate_backend` commands. Exits 1 when blockers found. `--json` emits structured output. Postgres-only; PGLite prints "not applicable".
+- `BrainEngine.withReservedConnection(fn)`: runs callback on a dedicated pool connection. Postgres via `sql.reserve()`, PGLite as a pass-through.
 
 #### Changed
 
@@ -59,10 +59,10 @@ Running a 500K-page brain on Supabase? The next migration that touches a hot tab
 
 #### For contributors
 
-- `setSessionDefaults(sql)` helper in `src/core/db.ts` — absorbs the duplicated `idle_in_transaction_session_timeout` block from `postgres-engine.ts`. Both connect paths call the helper; the SET appears exactly once in source.
-- `getIdleBlockers(engine)` exported from `src/core/migrate.ts` — single source of truth for the `pg_stat_activity` query. Shared by the pre-flight warning and `gbrain doctor --locks`.
+- `setSessionDefaults(sql)` helper in `src/core/db.ts` absorbs the duplicated `idle_in_transaction_session_timeout` block from `postgres-engine.ts`. Both connect paths call the helper; the SET appears exactly once in source.
+- `getIdleBlockers(engine)` exported from `src/core/migrate.ts`: single source of truth for the `pg_stat_activity` query. Shared by the pre-flight warning and `gbrain doctor --locks`.
 - `ReservedConnection` interface exposes `executeRaw(sql, params?)` only. Minimal surface, easy to mock. Not safe to call from inside `transaction()`; the interface doc says so.
-- `test/e2e/helpers.ts` adds `runMigrationsUpTo(engine, targetVersion)` + `setConfigVersion(version)` — enables mid-chain migration tests that neither `gbrain init --migrate-only` nor the existing `setupDB()` supported.
+- `test/e2e/helpers.ts` adds `runMigrationsUpTo(engine, targetVersion)` + `setConfigVersion(version)`: enables mid-chain migration tests that neither `gbrain init --migrate-only` nor the existing `setupDB()` supported.
 - `test/migrate.test.ts`: 10 new regression guards (`Math.max` robustness under array scrambling, `getIdleBlockers` shape across engines, 57014 catch path structural check, pre-flight warning, `setSessionDefaults` DRY, reserved-connection usage in `runMigrationSQL`).
 - `test/e2e/migrate-chain.test.ts` (new): 11 E2E tests against real Postgres covering post-chain schema invariants, `doctor --locks` real-connection detection, `runMigrationsUpTo` advancement semantics, `withReservedConnection` round-trip.
 
