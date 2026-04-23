@@ -54,6 +54,13 @@ export class PostgresEngine implements BrainEngine {
       }
       this._sql = postgres(url, opts);
       await this._sql`SELECT 1`;
+      // Prevent stale connections from holding locks indefinitely.
+      // 5 minutes is generous for any legitimate transaction.
+      try {
+        await this._sql`SET idle_in_transaction_session_timeout = '300000'`;
+      } catch {
+        // Non-fatal: some managed Postgres may restrict this GUC
+      }
     } else {
       // Module-level singleton (backward compat for CLI main engine)
       await db.connect(config);

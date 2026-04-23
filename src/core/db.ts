@@ -124,6 +124,14 @@ export async function connect(config: EngineConfig): Promise<void> {
     // Test connection
     await sql`SELECT 1`;
     connectedUrl = url;
+
+    // Prevent stale connections from holding locks indefinitely (Issue 2).
+    // 5 minutes is generous for any legitimate transaction.
+    try {
+      await sql`SET idle_in_transaction_session_timeout = '300000'`;
+    } catch {
+      // Non-fatal: some managed Postgres may restrict this GUC
+    }
   } catch (e: unknown) {
     sql = null;
     connectedUrl = null;

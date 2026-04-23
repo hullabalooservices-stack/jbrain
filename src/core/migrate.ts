@@ -579,6 +579,15 @@ export const MIGRATIONS: Migration[] = [
 
       CREATE INDEX IF NOT EXISTS idx_pages_source_id ON pages(source_id);
 
+      -- Drop any FK from files that references the old pages_slug_key
+      -- constraint (Issue 6: files.page_slug_fkey blocks the swap).
+      -- Guarded because PGLite may not have a files table.
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'files') THEN
+          ALTER TABLE files DROP CONSTRAINT IF EXISTS files_page_slug_fkey;
+        END IF;
+      END $$;
+
       -- Swap global UNIQUE(slug) → composite UNIQUE(source_id, slug). The
       -- original constraint is named pages_slug_key by Postgres convention
       -- when the column was declared UNIQUE inline. Both drops are
@@ -690,8 +699,73 @@ export const MIGRATIONS: Migration[] = [
 ];
 
 export const LATEST_VERSION = MIGRATIONS.length > 0
-  ? MIGRATIONS[MIGRATIONS.length - 1].version
+  ? Math.max(...MIGRATIONS.map(m => m.version))
   : 1;
+
+/**
+ * Check for idle-in-transaction connections that might block DDL.
+ * Returns true if blockers were found (logged as warnings).
+ */
+async function checkForBlockingConnections(engine: BrainEngine): Promise<boolean> {
+  if (engine.kind !== 'postgres') return false;
+  try {
+    const rows = await engine.executeRaw<{
+      pid: number;
+      state: string;
+      query_start: string;
+      query: string;
+    }>(
+      `SELECT pid, state, query_start::text, substring(query, 1, 120) as query
+       FROM pg_stat_activity
+       WHERE state = 'idle in transaction'
+         AND query_start < NOW() - INTERVAL '5 minutes'
+         AND pid != pg_backend_pid()`
+    );
+    if (rows.length > 0) {
+      console.warn(`\n⚠️  Found ${rows.length} idle-in-transaction connection(s) older than 5 minutes:`);
+      for (const r of rows) {
+        console.warn(`  PID ${r.pid} — idle since ${r.query_start}`);
+        console.warn(`    Query: ${r.query}`);
+      }
+      console.warn(`  These may block ALTER TABLE DDL. To kill: SELECT pg_terminate_backend(<pid>);\n`);
+      return true;
+    }
+  } catch {
+    // Non-fatal — some setups may not have pg_stat_activity access
+  }
+  return false;
+}
+
+/**
+ * Wrap migration SQL execution with Supabase-compatible timeout.
+ * Uses SET LOCAL statement_timeout inside a transaction to override
+ * server-enforced timeouts (required for Supabase Postgres).
+ */
+async function runMigrationSQL(
+  engine: BrainEngine,
+  m: Migration,
+  sql: string,
+): Promise<void> {
+  const useTransaction = m.transaction !== false;
+
+  if (useTransaction || engine.kind === 'pglite') {
+    // Wrap in transaction with extended timeout for Supabase compatibility.
+    // SET LOCAL scopes the timeout to this transaction only.
+    await engine.transaction(async (tx) => {
+      if (engine.kind === 'postgres') {
+        try {
+          await tx.runMigration(m.version, "SET LOCAL statement_timeout = '600000'");
+        } catch {
+          // Non-fatal: PGLite or older Postgres versions may not support this
+        }
+      }
+      await tx.runMigration(m.version, sql);
+    });
+  } else {
+    // Postgres + transaction:false → direct execution (e.g., CREATE INDEX CONCURRENTLY)
+    await engine.runMigration(m.version, sql);
+  }
+}
 
 export async function runMigrations(engine: BrainEngine): Promise<{ applied: number; current: number }> {
   const currentStr = await engine.getConfig('version');
@@ -703,39 +777,50 @@ export async function runMigrations(engine: BrainEngine): Promise<{ applied: num
   // be skipped on the next iteration.
   const sorted = [...MIGRATIONS].sort((a, b) => a.version - b.version);
 
-  let applied = 0;
-  for (const m of sorted) {
-    if (m.version > current) {
-      // Pick SQL: engine-specific `sqlFor` wins over engine-agnostic `sql`.
-      const sql = m.sqlFor?.[engine.kind] ?? m.sql;
-
-      if (sql) {
-        const useTransaction = m.transaction !== false;
-        // Non-transactional path is Postgres-only: `CREATE INDEX CONCURRENTLY`
-        // refuses to run inside a transaction. PGLite has no concurrent
-        // writers, so even if a migration sets transaction:false we wrap it
-        // anyway (harmless; keeps behavior consistent).
-        if (useTransaction || engine.kind === 'pglite') {
-          await engine.transaction(async (tx) => {
-            await tx.runMigration(m.version, sql);
-          });
-        } else {
-          // Postgres + transaction:false → direct execution, no BEGIN/COMMIT.
-          await engine.runMigration(m.version, sql);
-        }
-      }
-
-      // Application-level handler (runs outside transaction for flexibility)
-      if (m.handler) {
-        await m.handler(engine);
-      }
-
-      // Update version after both SQL and handler succeed
-      await engine.setConfig('version', String(m.version));
-      console.log(`  Migration ${m.version} applied: ${m.name}`);
-      applied++;
-    }
+  const pending = sorted.filter(m => m.version > current);
+  if (pending.length === 0) {
+    return { applied: 0, current };
   }
 
-  return { applied, current: applied > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : current };
+  console.log(`  Schema version ${current} → ${LATEST_VERSION} (${pending.length} migration(s) pending)`);
+
+  // Pre-flight: warn about connections that might block DDL
+  await checkForBlockingConnections(engine);
+
+  let applied = 0;
+  for (const m of pending) {
+    console.log(`  [${m.version}] ${m.name}...`);
+
+    // Pick SQL: engine-specific `sqlFor` wins over engine-agnostic `sql`.
+    const sql = m.sqlFor?.[engine.kind] ?? m.sql;
+
+    if (sql) {
+      try {
+        await runMigrationSQL(engine, m, sql);
+      } catch (err: unknown) {
+        // Actionable diagnostics for statement timeout (Postgres error 57014)
+        const code = (err as { code?: string })?.code;
+        if (code === '57014') {
+          console.error(`\n❌ Migration ${m.version} (${m.name}) hit statement_timeout.`);
+          console.error('   This usually means:');
+          console.error('   1. Another connection holds a lock on the target table (check pg_stat_activity)');
+          console.error('   2. The Supabase server statement_timeout is too short for this DDL');
+          console.error('   Fix: kill blocking connections, then re-run. See `gbrain doctor --locks`.\n');
+        }
+        throw err;
+      }
+    }
+
+    // Application-level handler (runs outside transaction for flexibility)
+    if (m.handler) {
+      await m.handler(engine);
+    }
+
+    // Update version after both SQL and handler succeed
+    await engine.setConfig('version', String(m.version));
+    console.log(`  [${m.version}] ✓ ${m.name}`);
+    applied++;
+  }
+
+  return { applied, current: LATEST_VERSION };
 }
