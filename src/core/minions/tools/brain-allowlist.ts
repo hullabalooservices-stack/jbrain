@@ -115,6 +115,14 @@ export interface BuildBrainToolsOpts {
   config: GBrainConfig;
   /** Optional filter: only include names in this set. */
   allowedNames?: ReadonlySet<string>;
+  /**
+   * Connected-gbrains brain id (v0.19+). Omitted = 'host'. Propagated into
+   * every op context built for this subagent so child tool calls target the
+   * brain the parent job was resolved into, not the process-wide default.
+   * Fixes Codex finding #6 (brain-allowlist hardwiring config without brain
+   * awareness).
+   */
+  brainId?: string;
 }
 
 interface OpContextDeps {
@@ -123,6 +131,7 @@ interface OpContextDeps {
   subagentId: number;
   jobId: number;
   signal?: AbortSignal;
+  brainId?: string;
 }
 
 function buildOpContext(deps: OpContextDeps): OperationContext {
@@ -139,6 +148,7 @@ function buildOpContext(deps: OpContextDeps): OperationContext {
     jobId: deps.jobId,
     subagentId: deps.subagentId,
     viaSubagent: true,           // FAIL-CLOSED: put_page etc. enforce namespace
+    brainId: deps.brainId,
   };
 }
 
@@ -179,6 +189,7 @@ export function buildBrainTools(opts: BuildBrainToolsOpts): ToolDef[] {
           subagentId: opts.subagentId,
           jobId: ctx.jobId,
           signal: ctx.signal,
+          brainId: opts.brainId,
         });
         const params = (input && typeof input === 'object') ? input as Record<string, unknown> : {};
         return op.handler(opCtx, params);

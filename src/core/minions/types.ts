@@ -390,6 +390,13 @@ export interface SubagentHandlerData {
   system?: string;
   /** Template variables for subagent_def. Arbitrary JSON-serializable. */
   input_vars?: Record<string, unknown>;
+  /**
+   * Connected-gbrains brain id (v0.19+). When set, every brain tool the
+   * subagent invokes targets this brain. Child jobs inherit this unless
+   * they override it in their own data. Omitted = 'host' (pre-v0.19
+   * behavior, single-brain deployments keep working unchanged).
+   */
+  brain_id?: string;
 }
 
 /**
