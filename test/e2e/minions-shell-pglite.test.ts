@@ -93,14 +93,22 @@ describe('E2E: Minions shell handler on PGLite (--follow inline path)', () => {
     }
   }, 30000);
 
-  test('GBRAIN_ALLOW_SHELL_JOBS unset → shell handler not registered', async () => {
-    // Temporarily unset the env var to prove registerBuiltinHandlers gates correctly.
+  test('GBRAIN_ALLOW_SHELL_JOBS unset → shellHandler rejects at execution time', async () => {
+    // v0.20.3+: shell handler is always registered (so claimed jobs emit a clear
+    // rejection log), but the runtime env guard lives inside the handler itself.
+    // Prove the guard rejects when the env var is unset.
+    const { shellHandler } = await import('../../src/core/minions/handlers/shell.ts');
     const saved = process.env.GBRAIN_ALLOW_SHELL_JOBS;
     delete process.env.GBRAIN_ALLOW_SHELL_JOBS;
     try {
-      const worker = new MinionWorker(engine, { pollInterval: 100, lockDuration: 30000 });
-      await registerBuiltinHandlers(worker, engine);
-      expect(worker.registeredNames).not.toContain('shell');
+      const ctx: any = {
+        id: 1,
+        name: 'shell',
+        data: { cmd: 'echo hi', cwd: '/tmp' },
+        attempt: 1,
+        engine,
+      };
+      await expect(shellHandler(ctx)).rejects.toThrow(/GBRAIN_ALLOW_SHELL_JOBS=1/);
     } finally {
       process.env.GBRAIN_ALLOW_SHELL_JOBS = saved;
     }
