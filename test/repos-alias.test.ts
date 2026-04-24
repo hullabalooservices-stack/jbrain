@@ -50,10 +50,14 @@ describe('sources subsystem (the target of the repos alias)', () => {
 describe('multi-repo.ts is no longer importable', () => {
   test('module is deleted from src/core/', async () => {
     // Dynamic import should throw. If somehow a stale copy exists, we
-    // want to know — this guards the Layer 4 delete.
+    // want to know — this guards the Layer 4 delete. The path is built
+    // at runtime so TypeScript's module resolution doesn't fail the
+    // typecheck on a non-existent module (that's exactly what the test
+    // is asserting at runtime).
+    const missingModule = '../src/core/' + 'multi-repo.ts';
     let importErr: unknown = null;
     try {
-      await import('../src/core/multi-repo.ts');
+      await import(missingModule);
     } catch (e) {
       importErr = e;
     }
