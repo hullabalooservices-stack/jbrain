@@ -467,6 +467,15 @@ async function handleCliOnly(command: string, args: string[]) {
         await runGraphQuery(engine, args);
         break;
       }
+      case 'reconcile-links': {
+        // v0.20.0 Cathedral II Layer 8 D3: batch-recompute doc↔impl edges
+        // for any markdown page that cites code files. Idempotent; safe to
+        // re-run. Closes the v0.19.0 Layer 6 order-dependency bug where
+        // guides imported before their code never got their edges written.
+        const { runReconcileLinksCli } = await import('./commands/reconcile-links.ts');
+        await runReconcileLinksCli(engine, args);
+        break;
+      }
       case 'orphans': {
         const { runOrphans } = await import('./commands/orphans.ts');
         await runOrphans(engine, args);
