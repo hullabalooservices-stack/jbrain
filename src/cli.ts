@@ -315,11 +315,6 @@ async function handleCliOnly(command: string, args: string[]) {
     await runCheckResolvable(args);
     return;
   }
-  if (command === 'repos') {
-    const { handleRepos } = await import('./commands/repos.ts');
-    await handleRepos(args);
-    return;
-  }
   if (command === 'report') {
     const { runReport } = await import('./commands/report.ts');
     await runReport(args);
@@ -482,6 +477,18 @@ async function handleCliOnly(command: string, args: string[]) {
         await runSources(engine, args);
         break;
       }
+      case 'repos': {
+        // v0.19.0: `gbrain repos ...` is an alias into the v0.18.0 sources
+        // subsystem. The repos abstraction (Wintermute's baseline) was
+        // redundant with sources and carried per-user config state that
+        // couldn't participate in federation / RLS / multi-tenancy. We
+        // keep the alias so scripts like `gbrain repos add .` keep
+        // working, with a nudge toward the canonical command.
+        console.error('[gbrain] Note: "repos" is an alias for "sources" as of v0.19.0. Prefer `gbrain sources <subcommand>`.');
+        const { runSources } = await import('./commands/sources.ts');
+        await runSources(engine, args);
+        break;
+      }
     }
   } finally {
     if (command !== 'serve') await engine.disconnect();
@@ -596,11 +603,13 @@ TOOLS
   check-resolvable [--json] [--fix]  Validate skill tree (reachability/MECE/DRY)
   report --type <name> --content ... Save timestamped report to brain/reports/
 
-MULTI-REPO
-  repos list                         Show configured repos
-  repos add <path> [--name N]        Add a repo [--strategy markdown|code|auto]
-  repos remove <name>                Remove a repo
-  sync --all                         Sync all configured repos
+SOURCES (multi-repo / multi-brain)
+  sources list                       Show registered sources
+  sources add <id> --path <p>        Register a source (id = short name, e.g. 'wiki')
+  sources remove <id>                Remove a source + its pages
+  sync --all                         Sync all sources with a local_path
+  sync --source <id>                 Sync one specific source
+  repos ...                          DEPRECATED alias for 'sources' (v0.19.0)
 
 JOBS (Minions)
   jobs submit <name> [--params JSON]  Submit background job [--follow] [--dry-run]

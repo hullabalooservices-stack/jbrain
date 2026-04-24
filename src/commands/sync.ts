@@ -557,31 +557,41 @@ export async function runSync(engine: BrainEngine, args: string[]) {
     sourceId = await resolveSourceId(engine, explicitSource);
   }
 
-  // Multi-repo: --all syncs all configured repos (Wintermute's baseline;
-  // will be reconciled against the v0.18.0 sources system in a later layer).
+  // v0.19.0 — `sync --all` iterates all registered sources with a
+  // local_path. Sources are the canonical v0.18.0 abstraction: per-source
+  // last_commit, last_sync_at, config.federated flags. Per-source
+  // bookmarks live in the sources table (not ~/.gbrain/config.json),
+  // which is why this path replaced Wintermute's `multi-repo.ts` shim.
+  //
+  // Only sources with a non-null local_path participate. A GitHub-only
+  // source (no checkout) has nothing for `sync` to pull. Sources with
+  // syncEnabled=false in config.jsonb are skipped too.
   if (syncAll) {
-    const { loadRepoConfigs } = await import('../core/multi-repo.ts');
-    const repos = loadRepoConfigs();
-    if (repos.length === 0) {
-      console.log('No repos configured. Use `gbrain repos add <path>` first.');
+    const sources = await engine.executeRaw<{ id: string; name: string; local_path: string | null; config: Record<string, unknown> }>(
+      `SELECT id, name, local_path, config FROM sources WHERE local_path IS NOT NULL`,
+    );
+    if (!sources || sources.length === 0) {
+      console.log('No sources with local_path configured. Use `gbrain sources add <id> --path <path>` first.');
       return;
     }
-    for (const repo of repos) {
-      if (repo.syncEnabled === false) {
-        console.log(`Skipping disabled repo: ${repo.name}`);
+    for (const src of sources) {
+      const cfg = (src.config || {}) as { syncEnabled?: boolean; strategy?: 'markdown' | 'code' | 'auto' };
+      if (cfg.syncEnabled === false) {
+        console.log(`Skipping disabled source: ${src.name}`);
         continue;
       }
-      console.log(`\n--- Syncing repo: ${repo.name} (${repo.strategy}) ---`);
+      console.log(`\n--- Syncing source: ${src.name} ---`);
       const repoOpts: SyncOpts = {
-        repoPath: repo.path,
+        repoPath: src.local_path!,
         dryRun, full, noPull, noEmbed, skipFailed, retryFailed,
-        strategy: repo.strategy,
+        sourceId: src.id,
+        strategy: cfg.strategy,
       };
       try {
         const result = await performSync(engine, repoOpts);
         printSyncResult(result);
       } catch (e: unknown) {
-        console.error(`Error syncing ${repo.name}: ${e instanceof Error ? e.message : String(e)}`);
+        console.error(`Error syncing ${src.name}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
     return;
