@@ -19,7 +19,7 @@ for (const op of operations) {
 }
 
 // CLI-only commands that bypass the operation layer
-const CLI_ONLY = new Set(['init', 'upgrade', 'post-upgrade', 'check-update', 'integrations', 'publish', 'check-backlinks', 'lint', 'report', 'import', 'export', 'files', 'embed', 'serve', 'call', 'config', 'doctor', 'migrate', 'eval', 'sync', 'extract', 'features', 'autopilot', 'graph-query', 'jobs', 'agent', 'apply-migrations', 'skillpack-check', 'resolvers', 'integrity', 'repair-jsonb', 'orphans', 'sources', 'dream', 'check-resolvable', 'repos']);
+const CLI_ONLY = new Set(['init', 'upgrade', 'post-upgrade', 'check-update', 'integrations', 'publish', 'check-backlinks', 'lint', 'report', 'import', 'export', 'files', 'embed', 'serve', 'call', 'config', 'doctor', 'migrate', 'eval', 'sync', 'extract', 'features', 'autopilot', 'graph-query', 'jobs', 'agent', 'apply-migrations', 'skillpack-check', 'resolvers', 'integrity', 'repair-jsonb', 'orphans', 'sources', 'dream', 'check-resolvable', 'repos', 'code-def', 'code-refs']);
 
 async function main() {
   // Parse global flags (--quiet / --progress-json / --progress-interval)
@@ -477,6 +477,16 @@ async function handleCliOnly(command: string, args: string[]) {
         await runSources(engine, args);
         break;
       }
+      case 'code-def': {
+        const { runCodeDef } = await import('./commands/code-def.ts');
+        await runCodeDef(engine, args);
+        break;
+      }
+      case 'code-refs': {
+        const { runCodeRefs } = await import('./commands/code-refs.ts');
+        await runCodeRefs(engine, args);
+        break;
+      }
       case 'repos': {
         // v0.19.0: `gbrain repos ...` is an alias into the v0.18.0 sources
         // subsystem. The repos abstraction (Wintermute's baseline) was
@@ -610,6 +620,11 @@ SOURCES (multi-repo / multi-brain)
   sync --all                         Sync all sources with a local_path
   sync --source <id>                 Sync one specific source
   repos ...                          DEPRECATED alias for 'sources' (v0.19.0)
+
+CODE INDEXING (v0.19.0)
+  code-def <symbol> [--lang l]       Find the definition of a symbol across code pages
+  code-refs <symbol> [--lang l]      Find all references to a symbol (JSON-first)
+  sync --strategy code               Sync code files into the brain
 
 JOBS (Minions)
   jobs submit <name> [--params JSON]  Submit background job [--follow] [--dry-run]
