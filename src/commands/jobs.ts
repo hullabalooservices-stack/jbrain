@@ -77,12 +77,12 @@ USAGE
   gbrain jobs supervisor status [--json] [--pid-file PATH]
   gbrain jobs supervisor stop [--json] [--pid-file PATH]
 
-    Auto-restarting wrapper around `gbrain jobs work`. Spawns the worker
+    Auto-restarting wrapper around 'gbrain jobs work'. Spawns the worker
     as a child process and restarts on crash with exponential backoff
-    (1s → 60s cap). Writes a PID file to `~/.gbrain/supervisor.pid` by
+    (1s -> 60s cap). Writes a PID file to ~/.gbrain/supervisor.pid by
     default (override via --pid-file or GBRAIN_SUPERVISOR_PID_FILE env).
     Lifecycle events are appended to
-      ${GBRAIN_AUDIT_DIR:-~/.gbrain/audit}/supervisor-YYYY-Www.jsonl
+      \${GBRAIN_AUDIT_DIR:-~/.gbrain/audit}/supervisor-YYYY-Www.jsonl
 
     SUBCOMMANDS
       start        (default) Launch the supervisor. --detach returns a
