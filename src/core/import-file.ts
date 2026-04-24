@@ -1,6 +1,7 @@
 import { readFileSync, statSync, lstatSync } from 'fs';
 import { basename } from 'path';
 import { createHash } from 'crypto';
+import { marked } from 'marked';
 import type { BrainEngine } from './engine.ts';
 import { parseMarkdown } from './markdown.ts';
 import { chunkText } from './chunkers/recursive.ts';
@@ -9,6 +10,133 @@ import { extractCodeRefs } from './link-extraction.ts';
 import { embedBatch } from './embedding.ts';
 import { slugifyPath, slugifyCodePath, isCodeFilePath } from './sync.ts';
 import type { ChunkInput, PageType } from './types.ts';
+
+/**
+ * v0.20.0 Cathedral II Layer 8 D2 — markdown fence extraction helper.
+ *
+ * Roughly 40% of gbrain's brain is docs/guides/architecture notes with
+ * substantial inline code. In v0.19.0 those fenced code blocks chunk as
+ * prose, so querying "how do we import from engine" ranks paragraphs
+ * ABOUT the import above the actual import example. D2 walks the marked
+ * lexer tokens, extracts each `{type:'code', lang, text}` fence with a
+ * known language tag, chunks the content via the code chunker (so TS
+ * fence gets TS-aware chunking), and persists those as extra chunks on
+ * the parent markdown page with `chunk_source='fenced_code'`.
+ *
+ * Fence tag → pseudo-extension map. We don't need a full file extension
+ * because chunkCodeText only calls detectCodeLanguage to pick a grammar;
+ * a recognized extension gets the right grammar loaded, that's all.
+ * Unknown tags return null → fence is skipped (no synthetic chunk).
+ */
+const FENCE_TAG_TO_PSEUDO_PATH: Record<string, string> = {
+  ts: 'fence.ts', typescript: 'fence.ts',
+  tsx: 'fence.tsx',
+  js: 'fence.js', javascript: 'fence.js',
+  jsx: 'fence.jsx',
+  py: 'fence.py', python: 'fence.py',
+  rb: 'fence.rb', ruby: 'fence.rb',
+  go: 'fence.go', golang: 'fence.go',
+  rs: 'fence.rs', rust: 'fence.rs',
+  java: 'fence.java',
+  'c#': 'fence.cs', cs: 'fence.cs', csharp: 'fence.cs',
+  cpp: 'fence.cpp', 'c++': 'fence.cpp',
+  c: 'fence.c',
+  php: 'fence.php',
+  swift: 'fence.swift',
+  kt: 'fence.kt', kotlin: 'fence.kt',
+  scala: 'fence.scala',
+  lua: 'fence.lua',
+  ex: 'fence.ex', elixir: 'fence.ex',
+  elm: 'fence.elm',
+  ml: 'fence.ml', ocaml: 'fence.ml',
+  dart: 'fence.dart',
+  zig: 'fence.zig',
+  sol: 'fence.sol', solidity: 'fence.sol',
+  sh: 'fence.sh', bash: 'fence.sh', shell: 'fence.sh', zsh: 'fence.sh',
+  css: 'fence.css',
+  html: 'fence.html',
+  vue: 'fence.vue',
+  json: 'fence.json',
+  yaml: 'fence.yaml', yml: 'fence.yaml',
+  toml: 'fence.toml',
+};
+
+function fenceTagToPseudoPath(lang: string | undefined): string | null {
+  if (!lang) return null;
+  return FENCE_TAG_TO_PSEUDO_PATH[lang.toLowerCase().trim()] ?? null;
+}
+
+/**
+ * Maximum code fences we'll extract from a single markdown page. Fence-bomb
+ * DOS defense — a malicious markdown file with 10K ```ts blocks could
+ * generate 10K chunks × embedding API calls. Override per-page via the
+ * `GBRAIN_MAX_FENCES_PER_PAGE` env var if docs-heavy brains legitimately
+ * exceed 100 fences on a single page.
+ */
+const MAX_FENCES_PER_PAGE = Number.parseInt(process.env.GBRAIN_MAX_FENCES_PER_PAGE || '100', 10);
+
+/**
+ * Walk the marked lexer output and extract recognizable code fences.
+ * Returns one ChunkInput per fence whose language tag maps to a grammar
+ * the chunker understands. Unknown tags + empty fences are skipped.
+ * Per-fence try/catch: one malformed fence doesn't abort the page import.
+ */
+async function extractFencedChunks(
+  markdown: string,
+  startChunkIndex: number,
+): Promise<ChunkInput[]> {
+  const out: ChunkInput[] = [];
+  let tokens: ReturnType<typeof marked.lexer>;
+  try {
+    tokens = marked.lexer(markdown);
+  } catch {
+    // marked's lexer errors on truly malformed input — bail, keep the
+    // markdown-level chunks that came from compiled_truth.
+    return out;
+  }
+
+  let fencesSeen = 0;
+  let indexOffset = 0;
+  for (const tok of tokens) {
+    if (tok.type !== 'code') continue;
+    const code = tok as { type: 'code'; lang?: string; text?: string };
+    const text = (code.text ?? '').trim();
+    if (!text) continue;
+    if (fencesSeen >= MAX_FENCES_PER_PAGE) {
+      console.warn(
+        `[gbrain] markdown fence cap hit (${MAX_FENCES_PER_PAGE} fences/page); skipping additional fences. ` +
+        `Override via GBRAIN_MAX_FENCES_PER_PAGE env var.`,
+      );
+      break;
+    }
+    fencesSeen++;
+    const pseudoPath = fenceTagToPseudoPath(code.lang);
+    if (!pseudoPath) continue; // unknown or missing lang tag → prose fallback
+    const lang = detectCodeLanguage(pseudoPath);
+    if (!lang) continue;
+    try {
+      const chunks = await chunkCodeText(text, pseudoPath);
+      for (const c of chunks) {
+        out.push({
+          chunk_index: startChunkIndex + indexOffset++,
+          chunk_text: c.text,
+          chunk_source: 'fenced_code',
+          language: c.metadata.language,
+          symbol_name: c.metadata.symbolName || undefined,
+          symbol_type: c.metadata.symbolType,
+          start_line: c.metadata.startLine,
+          end_line: c.metadata.endLine,
+        });
+      }
+    } catch (e: unknown) {
+      // One fence failing shouldn't sink the page. Log + continue.
+      console.warn(
+        `[gbrain] fence extraction failed for lang=${code.lang}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+  return out;
+}
 
 /**
  * The parsed page metadata returned by importFromContent. Callers (specifically
@@ -110,6 +238,17 @@ export async function importFromContent(
     for (const c of chunkText(parsed.timeline)) {
       chunks.push({ chunk_index: chunks.length, chunk_text: c.text, chunk_source: 'timeline' });
     }
+  }
+
+  // v0.20.0 Cathedral II Layer 8 D2 — extract fenced code blocks from
+  // compiled_truth as first-class code chunks. A markdown page like
+  // `docs/hybrid-search.md` with embedded TypeScript examples now ranks
+  // the TS fence directly in code-aware queries instead of burying it
+  // inside prose. Fences that carry an unrecognized lang tag (or no tag)
+  // fall through — the prose chunker above already chunked them as text.
+  if (parsed.compiled_truth.trim()) {
+    const fenceChunks = await extractFencedChunks(parsed.compiled_truth, chunks.length);
+    chunks.push(...fenceChunks);
   }
 
   // Embed BEFORE the transaction (external API call)
