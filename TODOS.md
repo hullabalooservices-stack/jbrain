@@ -1,20 +1,15 @@
 # TODOS
 
-## check-resolvable
+## Completed
 
-### File tracking issues for Checks 5 + 6 (deferred in PR #325)
-**Priority:** P2
+### ~~Checks 5 + 6 for check-resolvable~~
+**Completed:** v0.19.0 (2026-04-22)
 
-**What:** `src/commands/check-resolvable.ts` currently points `DEFERRED[].issue` at GitHub issue search URLs (`?q=TBD-check-5`, `?q=TBD-check-6`). File real tracking issues and grep-replace both placeholders with the real URLs.
+Both checks shipped as real implementations, not just filed issues:
+- **Check 5 (trigger routing eval):** `src/core/routing-eval.ts` + `gbrain routing-eval` CLI. Structural layer runs in `check-resolvable` by default; `--llm` opts into LLM tie-break. Fixtures live at `skills/<name>/routing-eval.jsonl`.
+- **Check 6 (brain filing):** `src/core/filing-audit.ts` + `skills/_brain-filing-rules.json`. New `writes_pages:` + `writes_to:` frontmatter. Warning-only in v0.19, error in v0.20.
 
-**Why:** v0.16.4 shipped `gbrain check-resolvable` with 4 of the 6 checks from the original spec. Checks 5 (trigger routing eval) and 6 (brain filing) were explicitly deferred during plan-ceo-review because they each need new detection logic. The CLI's `deferred[]` JSON field is meant to surface these to agents so they know the coverage boundary — the TBD placeholders do the right thing mechanically but aren't clickable.
-
-**How:**
-1. `gh issue create -t "check-resolvable Check 5: trigger routing eval" -b "..."` — detection: every skill's own frontmatter trigger should match the RESOLVER.md entry pointing at that skill. Needs new issue type (e.g. `mis_route`).
-2. `gh issue create -t "check-resolvable Check 6: brain filing validation" -b "..."` — detection: scan SKILL.md body for brain paths (e.g., `brain/people/`, `brain/companies/`), cross-reference with `skills/_brain-filing-rules.md`. Flag mutating skills missing entries.
-3. Replace `TBD-check-5` and `TBD-check-6` in `src/commands/check-resolvable.ts` with the real issue URLs.
-
-**Effort:** ~15 min mechanical (issue filing + grep-replace). Implementation of the checks themselves is a separate, larger piece of work — the TODO here is just the issue filing + URL swap.
+`DEFERRED[]` in `src/commands/check-resolvable.ts` is now empty — v0.19 shipped both deferred checks as working code paths, not as issue URLs. The export stays in place for future deferred checks.
 
 ## P1 (BrainBench v1.1 — categories deferred from PR #188)
 
@@ -243,6 +238,31 @@ board" — likely an advisor-role page prior plus verb-pattern combinations.
 **Depends on:** `child_done` inbox primitive (shipped in v0.11.0).
 
 ## P2
+
+### Orchestrator + runner double-write to migrations ledger (deferred from v0.18.2 codex review)
+
+**What:** `src/commands/migrations/v0_18_0.ts:200-208` appends an entry to `~/.gbrain/migrations/completed.jsonl` while `src/commands/apply-migrations.ts:374-386` also appends one for the same orchestrator run. The dedupe guard in `src/core/preferences.ts:120-131` only suppresses duplicate `complete` entries, not `partial` entries. Result: distorted wedge counting (3-consecutive-partials-triggers-wedge logic sees 6 partials when it should see 3).
+
+**Why:** Codex plan-review caught this during PR #356 while verifying the two-migration-systems resume boundary. Not blocking v0.18.2 shipping because it only affects the wedge detection threshold, not correctness of the migration itself.
+
+**Fix:** Pick one writer (prefer `apply-migrations.ts` runner as the single source of truth, remove the orchestrator-side append). Fold into `feat/agent-migration-devex` follow-up PR, which already touches both files for the migrate-command consolidation work.
+
+**Depends on:** v0.18.2 shipped. ✅
+
+### 22K-page resync is 30+ minutes on large brains (deferred from v0.18.2 codex review)
+
+**What:** When a schema migration requires data backfill (e.g., computing `page_id` from `page_slug` across all `files` rows), `src/commands/sync.ts:248-251, 311-337` iterates per-file. None of v0.18.2's hardening work shrinks this path. On a 22K-page brain the resync takes 30+ minutes; at 500K pages it would be several hours.
+
+**Why:** Codex explicitly called out that none of PR #356 or the two follow-up PRs addresses the resync execution model. This is a separate performance-design problem.
+
+**Options to explore:**
+- (a) Parallel page import via worker pool (Minions-based).
+- (b) Bulk COPY-based import replacing the per-file INSERT.
+- (c) Incremental resync that only rewrites changed rows (needs content hash or updated_at gating).
+
+**Priority:** P2 now, upgrade to P1 if another heavy migration ships that needs backfill at this scale.
+
+**Depends on:** v0.18.2 shipped. ✅
 
 ### Minions: `gbrain jobs stats --orphaned` (deferred from v0.13.0)
 
