@@ -371,7 +371,11 @@ export async function chunkCodeText(
  */
 function mergeSmallSiblings(chunks: CodeChunk[], chunkTarget: number): CodeChunk[] {
   if (chunks.length <= 1) return chunks;
-  const mergeThreshold = Math.floor(chunkTarget * 0.4); // consider chunks under 40% of target "small"
+  // 15% of chunk target is "tiny". The intent is to catch runs of single-
+  // line declarations (imports, const exports, typedefs) without collapsing
+  // substantive classes/functions. A 3-method class body is typically
+  // 80-200 tokens, well above 15% of 300 = 45 tokens → stays independent.
+  const mergeThreshold = Math.floor(chunkTarget * 0.15);
   const merged: CodeChunk[] = [];
   let i = 0;
   while (i < chunks.length) {
