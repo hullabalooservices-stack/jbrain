@@ -100,3 +100,32 @@ These apply to ALL brain-writing skills:
 - `skills/conventions/subagent-routing.md` — when to use Minions vs inline work
 - `skills/_brain-filing-rules.md` — where files go
 - `skills/_output-rules.md` — output quality standards
+
+## Jack's skills
+
+Custom domain skills. Same shape as upstream skills above; added by Jack rather than Garry. Future upstream merges only touch the sections above this one.
+
+| Trigger | Skill |
+|---|---|
+| Run a full fundamentals review (Gates A/B/C) — "do a review of {company}", "investment review" | `skills/fundamentals-review/SKILL.md` |
+| Recontextualise a company given a new signal (5-min quick assessment) | `skills/signal-recontext/SKILL.md` |
+| Grade an ambiguous signal (severity 0-4 + review flag) | `skills/signal-grade/SKILL.md` |
+| Interpret an order-book pattern semantically (crossed market, depth surge, etc.) | `skills/order-book-interpretation/SKILL.md` |
+| Classify news materiality (does it change fundamentals?) | `skills/news-classification/SKILL.md` |
+| Parse Jack's ack DM — update signal log entry | `skills/ack-signal/SKILL.md` |
+
+### Skill chaining (Jack-specific)
+
+- order-book-interpretation runs first when an order-book pattern is present, then signal-grade consumes the interpretation.
+- news-classification runs first on news items, then signal-grade consumes the materiality output.
+- fundamentals-review supersedes signal-recontext only when recontext concludes "stance changed, full re-eval needed."
+
+### Status (2026-04-25, post-fork-consolidation)
+
+- ✓ fundamentals-review: 668 lines, YAML frontmatter, paths normalised, drafts/publish dropped (auto-versioning via root-of-companies/{slug}/).
+- skeletons (contract-only, bodies TBD):
+  - signal-grade — Phase 21 will fill with real Jack-calibrated examples
+  - order-book-interpretation — Phase 21
+  - news-classification — Phase 21
+  - signal-recontext — Phase 24
+  - ack-signal — Phase 23
