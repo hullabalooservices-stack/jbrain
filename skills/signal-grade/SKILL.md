@@ -1,6 +1,6 @@
 ---
 name: signal-grade
-version: 0.2.0
+version: 0.2.1
 description: |
   Process all new events emitted by the Republic signal pipeline (email-watcher,
   order-book scraper, company-news, notifications). For each event, grade severity
@@ -79,6 +79,19 @@ If the working set is empty across all streams → exit cleanly: "no new events"
 ### Phase 3 — For each event, build context and grade
 
 Process events in chronological order (`ts` ascending). For each event:
+
+**3a-prelude — TEST event short-circuit (safety guard, added 2026-04-26 after the synthetic-Heights-Series-B incident):**
+
+If the event's `slug` starts with `TEST_` (case-insensitive) OR the event's `title`/`summary`/body contains the literal string `[TEST EVENT — BOT CONSOLIDATION VALIDATION]` or `[SIGNAL-GRADE PLUMBING TEST]`:
+- Treat this as a synthetic plumbing test — never grade against real brain context, never imply real news.
+- Send a Telegram with target=`telegram` containing the literal text:
+  `[TEST] signal-grade end-to-end OK — slug={slug} uid={raw.uid or ts} cron_ran_at={now}`
+- Append a log entry with `severity=0`, `review=false`, `telegram_sent=true`, `reasoning="synthetic plumbing test"`, `confidence=1.0`.
+- Advance position. Do NOT proceed to 3a/b/c/d/e for this event.
+
+This guard exists because LLM-graded test payloads on real slugs (e.g. `slug=heights` with fabricated Series-B news) are dangerous — if delivery succeeds, they look like real news on real holdings. **Synthetic events MUST use TEST_-prefixed slugs.**
+
+
 
 **3a — Identify event flavour:**
 - `source == "republic-email"` (notifications.jsonl): investor email forwarded from Republic. Body is in `raw.body_full` (preferred) or `summary` (fallback, truncated). Strip Gmail forward preamble (`---------- Forwarded message ----------` block) and Republic risk-warning boilerplate (`Don't invest unless you're prepared...`) before reading.
