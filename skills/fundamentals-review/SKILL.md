@@ -26,7 +26,7 @@ mutating: true
 
 Canonical operational contract for every Republic portfolio fundamental review. This is the "hard behavioural rules" layer referenced at the top of `ways_of_working.md`. If anything here contradicts `ways_of_working.md`, **this skill wins** — it encodes the more recent correction.
 
-Last updated: 2026-04-25 (v1.1.0: drafts/publish dropped — auto-versioning at root; paths normalised to `~/agents/republic/`; line refs replaced with section names; repo-layout note added). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
+Last updated: 2026-04-27 (v1.2.0: Phase 21.5 — added Rule 2b: read `historical_context.md` from the gather output before drafting Sections 2/12/13/15. The gather now produces this file automatically alongside the manifest, summarising 30/90-day watcher data per company). Prior 2026-04-25 (v1.1.0: drafts/publish dropped — auto-versioning at root; paths normalised; line refs replaced with section names; repo-layout note added). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
 
 ---
 
@@ -78,6 +78,34 @@ The manifest is the index into the evidence folder. Read it first. It tells you:
 - Every attachment's path + sha256 + source URL + OCR sibling
 - Per-raise structure when the company has historical raises (`/{slug}1`, `/{slug}2`, etc.)
 - Investor/comment/thread/update counts that feed the review's Section 5 and Section 12 claims
+
+### 2b. Read `historical_context.md` BEFORE drafting Sections 2, 12, 13, 15
+
+Added 2026-04-27 (Phase 21.5). Alongside the manifest, the gather writes:
+
+```
+~/agents/republic/research/{slug}/evidence/{YYYY-MM-DD}/historical_context.md
+```
+
+This file is a deterministic markdown summary built by `scrapers.historical_context`. It aggregates 30/90 days of watcher data filtered to the company:
+
+- **Order-book history** (last 90d): VWAP trajectory + delta %, bid-ask spread (median + range), depth evolution (buy/sell counts over time), all crossed-market events with timestamps + crossing %.
+- **Investor emails** (last 30d): every Republic email subject + date that the email-watcher daemon caught.
+- **News + filings** (last 90d): all Companies House filings (with type) + all Google News articles for this slug.
+- **Recent graded signals** (last 30d): every signal-grade output for this company by severity, with reasoning + Telegram-sent flag.
+- **Rule-based alerts** (last 30d): order-book daemon's Crossed-market / High-notional alert log.
+
+Synthetic test events (slug starts with `TEST_`, body contains `[SIGNAL-GRADE PLUMBING TEST]`, or sender is non-Republic) are filtered OUT of this file by `historical_context.py`.
+
+**You MUST read this file before drafting:**
+- **Section 2 (Market Dynamics — Order Book)** — cite VWAP trajectory, spread evolution, crossing density. Do NOT just describe the latest snapshot.
+- **Section 12 (Discussion & Investor Sentiment)** — incorporate the email cadence + content drift from `historical_context.md`'s investor email log.
+- **Section 13 (Risks ranked)** — reference recent graded signals (sev≥2 patterns, repeated sev=1 around a theme) as risk evidence.
+- **Section 15 (Monitoring — Weighted Factors)** — set monitoring thresholds anchored to OBSERVED ranges (median spread, VWAP range, crossing frequency), not abstract numbers.
+
+If `historical_context.md` is missing, the gather failed to produce it OR you're reviewing a company that wasn't yet in the watcher when reviews started. Note in Section 16 (Data Gaps): `historical_context: not available — review based on today-snapshot only`. Do NOT invent trajectory.
+
+If `historical_context.md` exists but is sparse (e.g. "No order-book snapshots in window"), say so plainly in the relevant section. Sparse history is a real signal — it means the company has been quiet OR has only recently entered the watcher.
 
 ### 3. Every attachment must be read — or explicitly skipped with a reason
 
