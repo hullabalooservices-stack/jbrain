@@ -26,7 +26,7 @@ mutating: true
 
 Canonical operational contract for every Republic portfolio fundamental review. This is the "hard behavioural rules" layer referenced at the top of `ways_of_working.md`. If anything here contradicts `ways_of_working.md`, **this skill wins** — it encodes the more recent correction.
 
-Last updated: 2026-04-27 (v1.2.0: Phase 21.5 — added Rule 2b: read `historical_context.md` from the gather output before drafting Sections 2/12/13/15. The gather now produces this file automatically alongside the manifest, summarising 30/90-day watcher data per company). Prior 2026-04-25 (v1.1.0: drafts/publish dropped — auto-versioning at root; paths normalised; line refs replaced with section names; repo-layout note added). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
+Last updated: 2026-04-27 (v1.3.0: Phase 21.7 — gather now caches closed raises from prior manifests, only the active raise (raises[-1] in oldest→newest order) gets a fresh Playwright walk. Cached tabs carry `extra.cached_from = <prior_date>` flag and rewritten attachment paths pointing at prior date's evidence dir. Disable with `republic_review_gather --no-cache` if KIIS PDFs change or you need fresh comments on closed-raise threads). Prior 2026-04-27 (v1.2.0: Phase 21.5 — Rule 2b for `historical_context.md`). Prior 2026-04-25 (v1.1.0: drafts/publish dropped). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
 
 ---
 
@@ -112,6 +112,8 @@ If `historical_context.md` exists but is sparse (e.g. "No order-book snapshots i
 Every PDF listed in `attachments[]` has a `.txt` OCR sibling. You read the sibling. Every significant attachment cited or referenced in the review body must trace back to an attachment in the manifest.
 
 If you deliberately skip an attachment (redundant KIIS copy in a non-English language, duplicate investor deck older than the authoritative current one), note it in the review's Section 16 (Data Gaps) with a `skipped — reason: {...}` line. No silent skips.
+
+**Cached attachments (Phase 21.7, added 2026-04-27):** Manifest entries with `extra.cached_from = <YYYY-MM-DD>` indicate the gather copied this raise's tabs forward from a prior manifest (closed raises are immutable; re-walking wastes cycles). Their `path` and `ocr` fields are rewritten to point at the prior date's evidence directory (e.g. `../2026-04-25/heights2/kiis.pdf`). Read the file at that resolved path — content is identical to the original. Do NOT report the cached_from date as the document's true date in the review; cited dates should come from the document's own headers (filing dates, KIIS publication dates, etc.). If a cached attachment's resolved path 404s on disk, treat it as a Data Gap (Section 16) and note the cache-pointer staleness.
 
 ### 4. Gather covers every raise slug, not just the live one
 
