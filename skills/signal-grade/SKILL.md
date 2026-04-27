@@ -1,6 +1,6 @@
 ---
 name: signal-grade
-version: 0.2.1
+version: 0.4.0
 description: |
   Process all new events emitted by the Republic signal pipeline (email-watcher,
   order-book scraper, company-news, notifications). For each event, grade severity
@@ -91,7 +91,38 @@ If the event's `slug` starts with `TEST_` (case-insensitive) OR the event's `tit
 
 This guard exists because LLM-graded test payloads on real slugs (e.g. `slug=heights` with fabricated Series-B news) are dangerous — if delivery succeeds, they look like real news on real holdings. **Synthetic events MUST use TEST_-prefixed slugs.**
 
+**3a-prelude2 — RAISE LIFECYCLE TRANSITION DETECTOR (added 2026-04-27, Phase 21.8 Component A):**
 
+Before applying the normal severity rubric, scan the email subject + body (or Updates post body) for lifecycle-transition signals. These are MUCH more time-critical than ordinary news because they imply Jack must act fast (priority-access windows can close in minutes).
+
+**OPEN signals — a new raise has just opened (or is about to open):**
+- "round opens" / "round is open" / "round is now open" / "round goes live"
+- "now open" / "live now" / "live to invest" / "open for investment"
+- "priority access" / "early access" granted/active
+- "investment opportunity" + a deadline or timeframe (Q2, this week, etc.)
+- "fundraise commencing" / "raising £X" with an actionable URL
+
+When matched on a `republic-email` event:
+- Grade **severity 4** + `review=true`
+- Telegram message MUST start with `🚨 NEW RAISE — {company}` and include:
+  - The matched signal phrase
+  - An explicit suggested action: e.g. "Check Republic now. If new raise slug, update `~/brain/companies/investment_registry.json` raises[] (prepend new slug) + raiseLifecycle.status=open + asOf=today. Then trigger fundamentals-review on the new round."
+- Append to `signal_grade_log.jsonl` with `lifecycle_signal: "open"` and the matched phrase.
+
+**CLOSED / TRANSITION-TO-SECONDARY signals — most-recent raise is wrapping up:**
+- "round has closed" / "round is closed" / "investment window closed"
+- "fully subscribed" / "oversubscribed"
+- "thank you to all investors" + past-tense raise references
+- "secondary market only" / "trading on secondary"
+
+When matched:
+- Grade **severity 3** + `review=true`
+- Telegram message must start with `⚠️ RAISE CLOSED — {company}` and suggest action: "Update registry raiseLifecycle.status=closed_secondary_only, asOf=today. Future updates flow through Updates tab + secondary order book — most recent raise's per-raise content is now frozen, can be cached forever."
+- Append log with `lifecycle_signal: "closed"`.
+
+**Why this elevates above ordinary grading:** lifecycle transitions are the events the registry must be updated for, otherwise the gather + historical_context + reviews go silently stale. They are the highest-value signal class. Bias toward false positives is acceptable — Jack would rather get one unnecessary "new raise?" Telegram than miss a real one.
+
+After this prelude check fires (or doesn't), continue to Phase 3a flavour identification below.
 
 **3a — Identify event flavour:**
 - `source == "republic-email"` (notifications.jsonl): investor email forwarded from Republic. Body is in `raw.body_full` (preferred) or `summary` (fallback, truncated). Strip Gmail forward preamble (`---------- Forwarded message ----------` block) and Republic risk-warning boilerplate (`Don't invest unless you're prepared...`) before reading.
