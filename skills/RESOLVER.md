@@ -113,6 +113,8 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 | Interpret an order-book pattern semantically (crossed market, depth surge, etc.) | `skills/order-book-interpretation/SKILL.md` |
 | Classify news materiality (does it change fundamentals?) | `skills/news-classification/SKILL.md` |
 | Parse Jack's ack DM — update signal log entry | `skills/ack-signal/SKILL.md` |
+| Weekly Sunday self-eval — "weekly self-eval", "/self-eval" | `skills/weekly-self-eval/SKILL.md` |
+| Weekly Sunday self-eval — "weekly self-eval", "/self-eval" |  |
 
 ### Skill chaining (Jack-specific)
 
