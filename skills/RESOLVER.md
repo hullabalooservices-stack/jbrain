@@ -114,7 +114,6 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 | Classify news materiality (does it change fundamentals?) | `skills/news-classification/SKILL.md` |
 | Parse Jack's ack DM — update signal log entry | `skills/ack-signal/SKILL.md` |
 | Weekly Sunday self-eval — "weekly self-eval", "/self-eval" | `skills/weekly-self-eval/SKILL.md` |
-| Weekly Sunday self-eval — "weekly self-eval", "/self-eval" |  |
 
 ### Skill chaining (Jack-specific)
 
@@ -122,12 +121,18 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 - news-classification runs first on news items, then signal-grade consumes the materiality output.
 - fundamentals-review supersedes signal-recontext only when recontext concludes "stance changed, full re-eval needed."
 
-### Status (2026-04-25, post-fork-consolidation)
+### Status (2026-04-28)
 
-- ✓ fundamentals-review: 668 lines, YAML frontmatter, paths normalised, drafts/publish dropped (auto-versioning via root-of-companies/{slug}/).
-- skeletons (contract-only, bodies TBD):
-  - signal-grade — Phase 21 will fill with real Jack-calibrated examples
-  - order-book-interpretation — Phase 21
-  - news-classification — Phase 21
-  - signal-recontext — Phase 24
-  - ack-signal — Phase 23
+Filled (production):
+
+- ✓ fundamentals-review v1.3.0 — Gates A/B/C, paths normalised, drafts/publish dropped (auto-versioning via root-of-companies/{slug}/), Rule 2b historical_context.md, manifest caching note for closed raises.
+- ✓ signal-grade v0.4.0 — Phase 21.8 lifecycle transition detector + LLM-based news-disambiguation in production.
+- ✓ daily-digest v0.1.0 — Phase 21.10 morning rollup of signal pipeline.
+- ✓ weekly-self-eval v0.1.0 — Sunday autonomous reflection (shipped 2026-04-28).
+- ✓ ack-signal v0.1.0 — human-in-the-loop calibration primitive (shipped 2026-04-28); writes to `~/brain/signals/misgrades.md`; complementary to weekly-self-eval.
+
+Deferred (skeleton, body bundled with downstream phase):
+
+- order-book-interpretation — Phase 21 deferred until order-book cookies fix (Top-15 #1) AND observed snapshot grading degradation. May not be needed; signal-grade currently handles snapshots when they flow.
+- news-classification — Phase 21 deferred. signal-grade's in-prompt LLM disambiguation already produces correct false-positive flagging in production (e.g. Heights → Golan Heights, Twickets, Yonder all sev 0 with reasoning "false-positive news match (LLM disambiguation)"). Drop unless evidence shows degradation.
+- signal-recontext — Phase 24 deferred. Bundle with auto-review-trigger plan.
