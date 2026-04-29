@@ -24,6 +24,8 @@ A vacuous self-eval is failure. Each question gets a specific answer or "no, non
 Read the past 7 days of:
 
 - `~/agents/republic/.watcher/signal_grade_log.jsonl` — graded events, telegram_sent flags, ack data
+- `~/brain/signals/auto_review_triggers.md` — additive stale-review refresh candidates from `signal-grade`; if missing, record "no trigger file observed" rather than creating a placeholder
+- `~/brain/signals/misgrades.md` — human ack / misgrade patterns from `ack-signal`; if missing, record "no misgrade file observed" rather than creating a placeholder
 - `~/brain/` git log: `git -C ~/brain log --since="7 days ago" --oneline`
 - `~/brain/meta/pipeline-status-snapshot-*.md` — daily health snapshots (last 7 dates)
 - `~/.hermes/sessions/` — recent agent sessions (filter by `mtime` within 7 days; sample for capitulation/pushback patterns)
@@ -49,7 +51,7 @@ Specific instances. Look for moments where Jack pushed back on a claim and the a
 
 ### 4. Was there something we forgot to do?
 
-Any follow-up that was implied or promised and never actioned. Re-surface here. Cross-reference last week's action items: which were closed, which carried forward.
+Any follow-up that was implied or promised and never actioned. Re-surface here. Cross-reference last week's action items and `~/brain/signals/auto_review_triggers.md`: which were closed, which carried forward, and which stale-review candidates need human-visible follow-up.
 
 ### 5. What rule failed this week that I should propose?
 
