@@ -56,7 +56,20 @@ State file: `~/agents/republic/.watcher/signal_grade_position.json` — JSON `{n
 
 Brain context (read-only, for grading):
 - `~/brain/companies/investment_registry.json` — registry (slug, fairValue, holding, cost_basis, raises[])
-- `~/brain/companies/{slug}/*_review_v*.md` and `*_evaluation_v*.md` — pick highest version (numerical suffix); if a `drafts/` subdirectory exists, include its files too. Skim TL;DR + Decision Dashboard + Section 1 (Scoring) + Section 13 (Risks) + Section 10g (TEP if present). Cap reading at first 4000 chars per review file.
+- `~/brain/companies/{folderSlug}/*_review_v*.md` and `*_evaluation_v*.md` — pick highest by `(date_in_filename, version)` descending. Resolve `folderSlug` via the registry's `folderSlug` field (NOT the legacy `slug` field, which may be a Republic URL slug). Cap reading at first 4000 chars per review file. Drafts subfolder retired 2026-04-29 — flat structure only.
+
+The dispatcher (`signal_grade_dispatcher.py`) injects structured fields into the
+LLM prompt directly from `investment_registry.json`:
+
+| Field | From registry | Purpose |
+|---|---|---|
+| `holding {shares, avgCost, totalCost, currency}` | `entry.holding` | Holdings-aware grading: a SH01 on a £23K position grades differently from a SH01 on a watch-only |
+| `fairValue {low, high, asOf, basis}` | `entry.fairValue` | Numeric anchor — no prose-parsing of Section 10g |
+| `targetEntryPrice` | `entry.latestReview.targetEntryPrice` | TEP-cross detection without LLM prose parse |
+| `fundamentalsScore` | `entry.latestReview.fundamentalsScore` | 0-100 score for severity calibration |
+| `signalState`, `action` | `entry.latestReview.{signalState,action}` | Current stance |
+
+LLM-extracted prose-parsing of these fields is now a fallback only.
 
 ---
 
@@ -135,7 +148,7 @@ After this prelude check fires (or doesn't), continue to Phase 3a flavour identi
 
 **3c — Load brain context:**
 - Registry entry for the slug (fairValue, holding, cost_basis).
-- Latest review file as described in "Inputs" — locate highest `_v{N}` of `*_review_v*.md` or `*_evaluation_v*.md` at `~/brain/companies/{slug}/` (include `drafts/` as fallback). Read first 4000 chars.
+- Latest review file as described in "Inputs" — picked by `(date_in_filename, version)` descending at `~/brain/companies/{folderSlug}/`. Read first 4000 chars.
 - From the review, extract — best-effort — the **TEP / target entry price** if present (typically Section 10 / 10g or "TEP" mentioned in Decision Dashboard). If you can find a numerical TEP in £/share, retain it. If not, set TEP=null.
 - Latest order-book snapshot for the slug from snapshots.jsonl (last entry where `slug == event.slug`).
 
@@ -187,7 +200,7 @@ For EVERY event processed (regardless of severity), append one line to `~/agents
 
 ```json
 {
-  "ts": "2026-04-26T12:34:56Z",          # processing time, not event time
+  "ts": "2026-04-29T12:34:56Z",          # processing time, not event time
   "event_ts": "<event.ts>",
   "stream": "notifications" | "snapshots" | "news",
   "source": "<event.source>",
@@ -198,11 +211,34 @@ For EVERY event processed (regardless of severity), append one line to `~/agents
   "telegram_sent": true/false,
   "reasoning": "<1-2 sentences>",
   "confidence": 0.0-1.0,
-  "event_uid_or_id": "<raw.uid for emails, ts+slug for snapshots, accession_id for CH>"
+  "event_uid_or_id": "<raw.uid for emails, ts+slug for snapshots, accession_id for CH>",
+
+  // Provenance fields (T1.4 — added 2026-04-29) — record what context the
+  // grader actually saw, so ack-signal + weekly-self-eval can audit each call.
+  "review_path": "companies/heights/2026-04-25_heights_review_v12.md",
+  "review_version": "12",
+  "review_date": "2026-04-25",
+  "review_age_days": 4,
+  "review_chars_loaded": 4000,
+  "holding_active": true,
+  "cost_basis_gbp": 23178.67,
+  // Optional cap fields if dispatch suppression triggered
+  "dispatch_suppressed_by_cap": true|false,
+  "dispatch_suppressed_by_dry_run": "cli"|"event"|null
 }
 ```
 
 This is the durable record — the source-of-truth for what was graded and why. Used by Phase 23's `ack-signal` skill to learn from Jack's manual feedback.
+
+### Phase 5b — Auto-review-trigger (T2.1, added 2026-04-29)
+
+After Phase 5 logs the row, if the graded severity is ≥3 AND the loaded review
+is older than 90 days (or null), the dispatcher appends a row to
+`~/brain/signals/auto_review_triggers.md` flagging the slug for refresh. This
+file is read by `weekly-self-eval` on Sundays to surface stale-review
+candidates, and is purely additive — no Telegram, no behaviour change to the
+graded event itself. Disable by removing the `append_auto_review_trigger`
+call in `signal_grade_dispatcher.py` if needed.
 
 ### Phase 6 — Advance positions, save state
 

@@ -19,7 +19,7 @@ context_bundle: (same shape as signal-grade)
 ## Output
 
 ```yaml
-output_file: ~/brain/companies/{slug}/drafts/{date}_recontext.md
+output_file: ~/brain/signals/{date}_{slug}_recontext.md
 summary_for_telegram: string  # 3 lines max, shown in Telegram
 verdict: "unchanged" | "reconsider" | "reconsider-urgently"
 ```

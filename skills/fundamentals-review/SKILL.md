@@ -6,7 +6,7 @@ description: |
   the Gates A/B/C framework. Enforces drafter/auditor separation,
   evidence-before-synthesis discipline, and probability-calibrated stance
   recommendations.
-  Output: ~/brain/companies/{slug}/{YYYY-MM-DD}_{slug}_review_v{N}.md (auto-versioned at root; never drafts/).
+  Output: ~/brain/companies/{slug}/{YYYY-MM-DD}_{slug}_review_v{N}.md (auto-versioned at root; flat structure — drafts/ subfolder retired 2026-04-29).
   Requires manifest from `~/agents/republic/scrapers.republic_review_gather` first.
 triggers:
   - "review {company}"
@@ -26,7 +26,7 @@ mutating: true
 
 Canonical operational contract for every Republic portfolio fundamental review. This is the "hard behavioural rules" layer referenced at the top of `ways_of_working.md`. If anything here contradicts `ways_of_working.md`, **this skill wins** — it encodes the more recent correction.
 
-Last updated: 2026-04-27 (v1.3.0: Phase 21.7 — gather now caches closed raises from prior manifests, only the active raise (raises[-1] in oldest→newest order) gets a fresh Playwright walk. Cached tabs carry `extra.cached_from = <prior_date>` flag and rewritten attachment paths pointing at prior date's evidence dir. Disable with `republic_review_gather --no-cache` if KIIS PDFs change or you need fresh comments on closed-raise threads). Prior 2026-04-27 (v1.2.0: Phase 21.5 — Rule 2b for `historical_context.md`). Prior 2026-04-25 (v1.1.0: drafts/publish dropped). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
+Last updated: 2026-04-29 (v1.4.0: drafts/ subfolder concept retired entirely — every review file at company root regardless of Gate-C state; Rule 24 added requiring extended YAML frontmatter with cap-table block per T2.3). Prior 2026-04-27 (v1.3.0: Phase 21.7 — gather now caches closed raises from prior manifests, only the active raise (raises[-1] in oldest→newest order) gets a fresh Playwright walk. Cached tabs carry `extra.cached_from = <prior_date>` flag and rewritten attachment paths pointing at prior date's evidence dir. Disable with `republic_review_gather --no-cache` if KIIS PDFs change or you need fresh comments on closed-raise threads). Prior 2026-04-27 (v1.2.0: Phase 21.5 — Rule 2b for `historical_context.md`). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
 
 ---
 
@@ -52,9 +52,7 @@ ls ~/brain/companies/{slug}/*_review_v*.md ~/brain/companies/{slug}/*_evaluation
 - **None exist** → this is OG → write `_v1.md`.
 - **At least one exists** → this is an UPDATE → take the highest `v{N}`, increment, write `_v{N+1}.md` next to the others at root.
 
-Example: `2026-04-13_heights_evaluation_v8.md` is the latest → today writes `{today}_heights_review_v9.md`. Filename always begins with date, then slug, then `review` (or `evaluation` for legacy compatibility), then `_v{N}.md`. Never use a `drafts/` subfolder; never two-step "publish."
-
-(Legacy `drafts/` subfolders may exist in some company dirs from before 2026-04-25 — read-only history, ignore them when picking the next version.)
+Example: `2026-04-13_heights_evaluation_v8.md` is the latest → today writes `{today}_heights_review_v9.md`. Filename always begins with date, then slug, then `review` (or `evaluation` for legacy compatibility), then `_v{N}.md`. All reviews — drafts and finalised — live at company root. There is no `drafts/` subfolder; the concept was retired 2026-04-29. Gate-C audit absence does not relegate a review; Gate C is a quality enhancer, not a validity gate.
 
 ## The non-negotiables
 
@@ -285,10 +283,11 @@ Spawn a fresh-context agent (Agent tool, subagent_type: `code-reviewer` or `gene
 12. **Probability base-rate test (Rule 19)** — every scenario probability in §10e either (a) cites a named empirical base rate, or (b) is marked `JUDGMENT — no empirical anchor`? For pre-revenue companies, Blockbuster is capped at 3% unless a named 24-month precedent is cited?
 13. **Sensitivity band test (Rule 20)** — §10g shows Investability_central, Investability_low, Investability_high with stresses documented? FRAGILE flag applied if band width > 15pp? Upward action gated by low-end?
 14. **EIS calibration test (Rule 21)** — if any route is EIS-eligible, §10g shows both (primary+EIS) and (secondary-no-EIS) Investability explicitly? §11 shows per-lot EIS status?
+15. **Extended frontmatter test (Rule 24, post 2026-04-29)** — does the review file open with the YAML frontmatter block per Rule 24 (cap-table block, fair_value_low/high_gbp, target_entry_price_gbp, holding_active, action enum)? Required for v2+ post-2026-04-29; absence on a new review fails Gate C.
 
 Agent returns PASS-with-evidence or FIX-with-specific-revision per item. On any FIX, drafter applies the revision and re-spawns the agent with the revised draft + prior findings attached. Loop until agent returns all-PASS.
 
-**Final output:** Audit transcript (all iterations verbatim) written into the review's **Section 20 — Self-Audit Log**. The existence of Section 20 with all-PASS across ALL 14 items is the gate; no Self-Audit Log = review is not finalised. Tests 11–14 are new as of 2026-04-23; reviews predating this revision that did not run them are flagged for retrofit (see Phase 4 retrofit queue).
+**Final output:** Audit transcript (all iterations verbatim) written into the review's **Section 20 — Self-Audit Log**. The existence of Section 20 with all-PASS across ALL 15 items is the gate; no Self-Audit Log = review is not finalised. Tests 11–14 are new as of 2026-04-23; test 15 added 2026-04-29; reviews predating this revision that did not run them are flagged for retrofit (see Phase 4 retrofit queue).
 
 ### 17. Template header block is mandatory — no "Headline" table variants
 
@@ -560,6 +559,60 @@ Mechanically, sum probabilities over Bear + Base + Bull (typically 95–97% of t
 - Empirically: reviews with aggressive Blockbuster weights (Thermify 5%, Stampfree 10%) had inflated both A and M under the old double-counting formula. Moving Blockbuster to A-only halved M for Thermify and dropped Investability 97 → 44.
 
 **Exception:** Blockbuster can be included in FV only when the Blockbuster scenario is backed by a named dated precedent within 24 months that has *already closed* (not a hypothetical) AND the drafter argues the specific subject company has demonstrable pathway to the same outcome. This is the rare case and requires Gate C explicit challenge. Default: exclude.
+
+---
+
+### 24. Extended YAML frontmatter — machine-readable cap-table block (T2.3, added 2026-04-29)
+
+Every new review MUST open with extended YAML frontmatter that downstream
+consumers (signal-grade dispatcher, registry sync, weekly-self-eval) can
+parse without re-extracting from prose. Format:
+
+```yaml
+---
+type: review
+slug: hunter-gather                      # canonical brain folder slug (matches investment_registry.folderSlug)
+date: 2026-04-22
+version: 1
+fundamentals_score: 61                   # 0-100
+signal_state: "Mixed (leaning positive)"
+action: HOLD                             # HOLD | WATCH | PASS | SELL | BUY-AT-TEP
+fair_value_low_gbp: 18.0
+fair_value_high_gbp: 21.5
+target_entry_price_gbp: 9.45             # TEP per share
+holding_active: true                     # has Jack a position?
+cap_table:
+  preference_stack_gbp: 0                # aggregate preference £; 0 if no Preferred
+  founder_pct_fully_diluted: 30.4
+  options_outstanding: 6733283
+  dilution_to_liquidity_pct: 14.6
+  share_classes:                         # one entry per class on AoA
+    - name: Ordinary
+      voting: standard                   # standard | super | non_voting
+      preference: pari_passu             # pari_passu | 1x_non_participating | 1x_participating | 1x_participating_capped
+    - name: "Series A Preferred"
+      voting: standard
+      preference: 1x_non_participating
+last_review_action_was: HOLD             # registry-pointer style; lets registry diff
+---
+```
+
+**Why structured:** signal-grade dispatcher reads the `holding`, `fairValue`,
+`targetEntryPrice`, `fundamentalsScore`, `action` fields directly from the
+investment_registry.json (which mirrors these). Future bid-tracker, weekly
+auto-review-trigger, and ack-signal calibration all benefit from the same
+machine-readable surface. Avoids the prose-parse-every-event tax.
+
+**What it does NOT replace:** the full prose review remains the source of
+truth for thesis, scoring rationale, M&A precedents, Section 20 audit log.
+The YAML is a derived summary — if YAML and prose disagree, prose wins.
+
+**Scope:** applies to v2+ reviews dated post-2026-04-29. Existing reviews
+not retro-fitted; they remain valid via prose extraction. Cap-table block
+extracted at review-write time during Section 9 / 13 work — no extra effort.
+
+**Violation (added to Gate C as item #15):** any review at v2+ post-2026-04-29
+without the extended frontmatter fails Gate C and must be revised.
 
 ---
 

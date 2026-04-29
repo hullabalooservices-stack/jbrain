@@ -125,7 +125,7 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 
 Filled (production):
 
-- ✓ fundamentals-review v1.3.0 — Gates A/B/C, paths normalised, drafts/publish dropped (auto-versioning via root-of-companies/{slug}/), Rule 2b historical_context.md, manifest caching note for closed raises.
+- ✓ fundamentals-review v1.4.0 — Gates A/B/C, drafts/ subfolder retired entirely (2026-04-29) — every review at company root, Rule 24 added (extended YAML frontmatter with cap-table block, T2.3), Gate C item 15 (frontmatter test). Prior: Rule 2b historical_context.md, manifest caching for closed raises.
 - ✓ signal-grade v0.4.0 — Phase 21.8 lifecycle transition detector + LLM-based news-disambiguation in production.
 - ✓ daily-digest v0.1.0 — Phase 21.10 morning rollup of signal pipeline.
 - ✓ weekly-self-eval v0.1.0 — Sunday autonomous reflection (shipped 2026-04-28).
