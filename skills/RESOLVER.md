@@ -32,17 +32,36 @@ This is the dispatcher. Skills are the implementation. **Read the skill file bef
 | Meeting transcript received | `skills/meeting-ingestion/SKILL.md` |
 | Generic "ingest this" (auto-routes to above) | `skills/ingest/SKILL.md` |
 
-## Thinking skills (from GStack)
+## GStack thinking and implementation workflow
 
 | Trigger | Skill |
 |---------|-------|
-| "Brainstorm", "I have an idea", "office hours" | GStack: office-hours |
-| "Review this plan", "CEO review", "poke holes" | GStack: ceo-review |
-| "Debug", "fix", "broken", "investigate" | GStack: investigate |
-| "Retro", "what shipped", "retrospective" | GStack: retro |
+| "Brainstorm", "I have an idea", "office hours", "help me think through", "is this worth building" | GStack: office-hours |
+| Complex build / new tool / new automation / new pipeline / "make this happen" / "build me a tool" / "set up a workflow" / "connect X to my brain" | GStack: office-hours first if problem or scope is unclear; then GStack: plan-eng-review before implementation |
+| "Review this plan", "CEO review", "poke holes", "think bigger", "strategy review", "rethink this plan" | GStack: plan-ceo-review |
+| Architecture / implementation plan / data flow / edge cases / tests / "before we build" / "lock the plan" / "is this the right structure" | GStack: plan-eng-review |
+| Design plan / UX plan / UI direction / visual hierarchy before implementation | GStack: plan-design-review |
+| Developer experience / onboarding / docs flow / CLI help / time-to-hello-world before implementation | GStack: plan-devex-review |
+| "Debug", "fix", "broken", "investigate", "why is this failing", root-cause analysis | GStack: investigate |
+| Code review / diff review / PR review / pre-landing review / "check my changes" | GStack: review |
+| "Ship", "create a PR", "commit and push", "push this", "deploy this" | GStack: ship (respect Jack's approval gates for production, public remotes, destructive actions, and launchd changes) |
+| "Merge", "land it", "deploy to production", "verify deploy" | GStack: land-and-deploy; chain to GStack: canary for post-deploy monitoring |
+| Post-deploy check / watch production / canary / monitor after deploy | GStack: canary |
+| QA / browser test / "test this site" / "find bugs" / "try this flow" | GStack: qa; use GStack: qa-only when Jack asks for report-only |
+| Authenticated browser testing / import cookies / login to test site | GStack: setup-browser-cookies before QA/browser workflows |
+| Security audit / secrets / credentials / token handling / threat model / OWASP / supply chain | GStack: cso |
+| Risky shared-state work / destructive commands / production / cleanup / broad refactor / "be careful" | GStack: guard, careful, or freeze depending on scope |
+| Design system / brand / landing page / mockup / UI polish / visual options | GStack design chain: design-consultation, design-shotgun, design-html, design-review |
+| Codebase health / quality dashboard / lint-type-test overview / technical debt | GStack: health |
+| Performance benchmark / page speed / Core Web Vitals / regression | GStack: benchmark |
+| Model choice / compare Claude vs GPT vs Gemini / which model should do this | GStack: benchmark-models |
+| Save progress / checkpoint / handoff / resume / where were we / context restore | GStack: checkpoint, context-save, or context-restore |
+| Repeated issue / "didn't we fix this before" / show or prune project learnings | GStack: learn |
+| Post-ship docs / update README / changelog / release notes / document what changed | GStack: document-release |
+| Retro / what shipped / retrospective | GStack: retro |
 
-> These skills come from GStack. If GStack is installed, the agent reads them directly.
-> If not, brain-only mode still works (brain skills function without thinking skills).
+> These skills come from GStack. If GStack is installed, read the matching `~/.claude/skills/gstack/.gbrain/skills/gstack-*/SKILL.md` file directly before acting.
+> If GStack is not installed, brain-only mode still works; approximate the workflow using the closest GBrain skill and state the fallback.
 
 ## Operational
 
