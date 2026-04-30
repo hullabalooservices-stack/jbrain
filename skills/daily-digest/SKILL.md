@@ -60,16 +60,19 @@ Compose a SINGLE Telegram message body. Plain text. ≤1500 chars. No markdown u
 Structure:
 
 ```
-Daily digest — {YYYY-MM-DD}, {N events graded, M sent}
+Republic digest — {DD Mon}
 
-{Highlights — only sev≥2 events; one per line, one sentence each. If none: "No actionable signals overnight."}
+Action
+- {Only decisions Jack may need today. If none: "None."}
 
-{Watch-list — companies with raise_watch=true; one line each: "Altilium: still pre-access (no email yet)" or "Altilium: round opened 09:23 UTC"}
+Watch
+- {Useful non-urgent signals, one sentence each. Omit noise.}
 
-{Order book deltas — only companies where VWAP moved >5% or depth shifted notably. ≤3 lines.}
-
-{Open question / suggested action — if anything warrants a decision today, name it. Else "Nothing needs your attention today."}
+Suppressed
+- {Optional: one short line for false positives/routine admin if notable volume.}
 ```
+
+Do not mention model names, Codex, GPT, event counts, token/source plumbing, or "Telegrams sent" in the user-facing body. If pipeline health itself is broken, that belongs in an ops alert, not the investment digest.
 
 **Tone:** Peer voice (same Keith). Factual. Don't use cheerful filler ("Hope you had a good night!"). Don't repeat low-severity noise.
 
@@ -93,11 +96,13 @@ When summarising, prioritise:
 If everything graded sev0/1 and nothing material happened, the digest should be SHORT:
 
 ```
-Daily digest — 2026-04-28, 14 events graded, 0 sent.
+Republic digest — 28 Apr
 
-Quiet overnight. Nothing actionable.
+Action
+- None.
 
-Watch-list: Altilium still pre-access — no priority email yet.
+Watch
+- Altilium: still pre-access; no priority email yet.
 ```
 
 That's fine. Brevity in noise is honest.

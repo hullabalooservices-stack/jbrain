@@ -6,7 +6,9 @@ description: |
   order-book scraper, company-news, notifications). For each event, grade severity
   (0-4) + decide review-needed (binary), and — for severity >= 2 — synthesise an
   opinionated Telegram message in Keith's voice using brain context (latest review
-  of the company, latest order-book snapshot).
+  of the company, latest order-book snapshot). User-facing Telegram is now reserved
+  for immediate/actionable items; monitor-only severity-2 output is logged for the
+  daily digest rather than pushed as a live ping.
 
   This is the canonical "daemon-emitted event → LLM processing" skill per Garry's
   pattern (`~/brain/meta/memory/reference_garry_skillify_methodology.md`). Replaces
@@ -175,9 +177,14 @@ Set review=false when:
 
 ### Phase 4 — Synthesise & dispatch
 
-For each event with severity ≥ 2:
+For each event, produce a concise message candidate for severity ≥2, but only send immediate Telegram when the dispatcher classifies it as `telegram_priority=immediate`.
 
-**4a — Compose the Telegram message** (Keith voice, plain text, ≤350 chars, no markdown, no JSON):
+Priority rules:
+- `immediate`: severity 4; priority-access/new-raise/open-round email; actionable severity-3 item with a concrete next step; material stance-review trigger.
+- `digest`: severity-2 monitor-only signals; no-thesis-change signals; false-positive-adjacent context; thin book/no TEP-cross; routine CH/admin/news items that are useful but not urgent.
+- `silent`: severity 0/1 and true noise.
+
+**4a — Compose the Telegram candidate** (Keith voice, plain text, ≤350 chars, no markdown, no JSON):
 1. Name the company and what's actually new — strip Republic filler.
 2. Say explicitly whether this changes anything in Jack's existing thesis (cite review's stance/decision when relevant).
 3. Suggest one concrete next action: "monitor only" / "read full email body" / "trigger fundamentals-review" / "consider partial sell" / "buy at TEP" — pick what fits, don't list options.
@@ -186,13 +193,10 @@ Tone: factual, grounded, no hype. Peer, not assistant. If context is sparse (no 
 
 For severity 4, prepend the text "🚨 URGENT — " to the message. For severity 3, prepend "⚠️ ".
 
-**4b — Send via the `send_message` tool**:
-```
-send_message(action="send", target="telegram", message="<composed text>")
-```
-Use `target="telegram"` to push to the home channel (Jack's primary chat with Keith).
+**4b — Dispatch**:
+The Python dispatcher sends only `telegram_priority=immediate`; `digest` candidates are recorded in `signal_grade_log.jsonl` for the daily digest. Do not include model names, Codex/GPT labels, source plumbing, or footer provenance in the user-facing body.
 
-**4c — On send failure** — if `send_message` returns an error, do NOT advance position past this event. Log the error to signal_grade_log.jsonl with `dispatch_error` flag; the next scheduled tick will retry.
+**4c — On send failure** — if dispatch returns an error for an immediate item, do NOT advance position past this event. Log the error to signal_grade_log.jsonl with `dispatch_error` flag; the next scheduled tick will retry.
 
 ### Phase 5 — Append to signal_grade_log.jsonl
 
