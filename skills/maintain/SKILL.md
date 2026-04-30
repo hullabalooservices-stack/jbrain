@@ -255,9 +255,10 @@ after bulk imports or content edits that add new dated entries.
 Chunks without embeddings, or chunks embedded with an old model.
 - Preflight the embedding provider before any non-dry-run embed. Current gbrain embeds with OpenAI `text-embedding-3-large` via `OPENAI_API_KEY`; Codex/OAuth auth is not enough. If `OPENAI_API_KEY` is missing, do not start `gbrain embed --stale` because the CLI will iterate pages and emit per-page missing-key errors.
 - Always run `gbrain embed --stale --dry-run` first and record the chunk/page count plus cost/model assumption.
-- For large embedding refreshes (>1000 chunks), use nohup only after the key/cost gate is clear:
-  `nohup gbrain embed --stale > /tmp/gbrain-embed.log 2>&1 &`
-- Then check progress: `tail -1 /tmp/gbrain-embed.log`
+- If the key is stored in `~/.hermes/.env`, gbrain may not auto-load it from a plain shell. Verify key presence without printing the value, then export/inject `OPENAI_API_KEY` into the gbrain command environment.
+- For large embedding refreshes (>1000 chunks), run with bounded concurrency only after the key/cost gate is clear, e.g. `GBRAIN_EMBED_CONCURRENCY=4 gbrain embed --stale`; use `nohup` only for unattended runs:
+  `nohup env OPENAI_API_KEY="$OPENAI_API_KEY" GBRAIN_EMBED_CONCURRENCY=4 gbrain embed --stale > /tmp/gbrain-embed.log 2>&1 &`
+- Then check progress: `tail -1 /tmp/gbrain-embed.log`, and verify with `gbrain stats` plus `gbrain doctor --json`.
 
 ### Security (RLS verification)
 Run `gbrain doctor --json` and check the RLS status.
