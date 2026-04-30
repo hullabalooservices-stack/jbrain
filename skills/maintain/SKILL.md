@@ -253,8 +253,10 @@ after bulk imports or content edits that add new dated entries.
 
 ### Embedding freshness
 Chunks without embeddings, or chunks embedded with an old model.
-- For large embedding refreshes (>1000 chunks), use nohup:
-  `nohup gbrain embed refresh > /tmp/gbrain-embed.log 2>&1 &`
+- Preflight the embedding provider before any non-dry-run embed. Current gbrain embeds with OpenAI `text-embedding-3-large` via `OPENAI_API_KEY`; Codex/OAuth auth is not enough. If `OPENAI_API_KEY` is missing, do not start `gbrain embed --stale` because the CLI will iterate pages and emit per-page missing-key errors.
+- Always run `gbrain embed --stale --dry-run` first and record the chunk/page count plus cost/model assumption.
+- For large embedding refreshes (>1000 chunks), use nohup only after the key/cost gate is clear:
+  `nohup gbrain embed --stale > /tmp/gbrain-embed.log 2>&1 &`
 - Then check progress: `tail -1 /tmp/gbrain-embed.log`
 
 ### Security (RLS verification)
