@@ -6,13 +6,21 @@ Use this skill whenever Jack asks Keith/Hermes to capture, review, migrate, summ
 
 Plane is the execution source of truth. The brain remains the source of context, evidence, reasoning, decisions, and historical plans.
 
-Canonical local Plane board:
-- App URL: `http://localhost:8080`
+Canonical Plane board:
+- Local app URL: `http://localhost:8080`
+- Tailnet HTTPS app URL for iPhone/native app: `https://agent.taila0e417.ts.net`
 - Workspace: `Agent`
 - Workspace slug: `agent`
 - Project: `Operating Board`
 - Project identifier: `OPS`
-- Board URL for summaries: `http://localhost:8080/agent/projects`
+- Board URL for summaries: `https://agent.taila0e417.ts.net/agent/projects`
+
+Mobile/iPhone notes:
+- Native Plane iOS app asks for the base instance URL; use `https://agent.taila0e417.ts.net`, not the `/agent/projects` board path.
+- The iPhone must be logged into the same Tailscale tailnet.
+- On the mini, use `/Applications/Tailscale.app/Contents/MacOS/Tailscale`, not `/usr/local/bin/tailscale`, because the symlink can crash with `bundleIdentifier is unknown`.
+- Tailscale Serve config should show `/ proxy http://localhost:8080` for `https://agent.taila0e417.ts.net`.
+- Plane env currently remains local (`WEB_URL=http://localhost:8080`) because the verified HTTPS proxy works without restarting Plane.
 
 Local MCP bridge notes:
 - Hermes MCP server: `plane`
@@ -165,7 +173,7 @@ This morning:
 2. ...
 3. ...
 
-Board: http://localhost:8080/agent/projects
+Board: https://agent.taila0e417.ts.net/agent/projects
 
 Watchouts:
 - ...
