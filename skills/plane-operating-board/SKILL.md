@@ -62,6 +62,8 @@ Before moving a card from `Backlog` to `Todo`:
 
 Before moving a card from `Todo` to `In Progress`, verify the execution plan still matches reality and record the start decision. No work starts from `Backlog` or `Todo` without this planning gate.
 
+Completion pressure does not bypass this gate. If Jack says to avoid deferring or to "do it now," complete the current authorised step now: create/link the execution plan, update labels truthfully (`needs-plan` until a plan exists; `plan-ready` only after one exists), and leave execution unstarted unless the start decision is explicit or already obvious under this skill.
+
 Light formal gate questions:
 
 1. Why now?
@@ -198,6 +200,7 @@ Current migrated active cards:
 - Auto-promoting parked ideas during daily review.
 - Moving Backlog to Todo without an execution plan.
 - Starting work from Todo/In Progress without checking that the plan still fits.
+- Treating "finish now" or "don't defer" as permission to skip Backlog→Todo planning or Todo→In Progress start checks.
 - Letting Backlog contain vague cards with no next action.
 - Sending a morning brief that claims Plane was checked when API/MCP access failed.
 - Making the daily brief a long audit report.
