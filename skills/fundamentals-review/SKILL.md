@@ -616,6 +616,34 @@ without the extended frontmatter fails Gate C and must be revised.
 
 ---
 
+### 25. Registry update is part of review finalisation — not optional backfill
+
+Every completed review MUST update `~/brain/companies/investment_registry.json` before the review is reported as done. A review file at company root and a stale registry is an incomplete run.
+
+**When:** after Gate C returns all-PASS and after any resulting edits are applied, but before final user delivery / commit. Do not update the registry from a draft that has not passed Gate C.
+
+**Where this belongs:** this `fundamentals-review` skill owns the write. Signal-grade, daily-digest, bid-state, and watcher skills are consumers of the registry; they must not infer or backfill fundamental review state opportunistically.
+
+**Source of truth for the registry update:** parse the review's YAML frontmatter first, then verify against the `★ Decision Output` block and Section 10/11 values. If YAML and prose disagree, fix the review first; do not mirror inconsistent data into the registry.
+
+**Required registry fields to update for the company entry:**
+
+- `latestReview.path` → `companies/{folderSlug}/{filename}`
+- `latestReview.date` → review date
+- `latestReview.version` → review version
+- `latestReview.fundamentalsScore` → `fundamentals_score`
+- `latestReview.signalState` → `signal_state`
+- `latestReview.action` → `action`
+- `latestReview.targetEntryPrice` → `target_entry_price_gbp` when present
+- `fairValue.low`, `fairValue.high`, `fairValue.asOf`, `fairValue.basis` → from YAML / Section 10 fair-value derivation
+- `holding_active`-dependent fields only when the review has validated Jack's position; do not invent holdings from prose
+
+**Write discipline:** update the JSON atomically (tempfile + `os.replace`), preserve unrelated registry fields, run `python3 -m json.tool ~/brain/companies/investment_registry.json`, then run a path integrity check that every non-null `latestReview.path` exists. If the repo is being committed, stage the review file and registry update together.
+
+**Failure mode:** if the registry cannot be safely updated, state that the review is written but NOT finalised, leave a task in `~/brain/ops/tasks.md`, and do not claim downstream signal-grade/daily-digest state is current.
+
+---
+
 ## How to invoke
 
 Cold-start baseline for a new review:
