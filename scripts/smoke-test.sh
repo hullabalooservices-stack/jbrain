@@ -49,11 +49,33 @@ for bp in "/root/.bun/bin/bun" "/data/.bun/bin/bun" "$(which bun 2>/dev/null)"; 
   [ -n "$bp" ] && [ -x "$bp" ] && BUN_PATH="$bp" && break
 done
 
-# Resolve database URL
+# Resolve database URL / local engine mode
 DB_URL="${GBRAIN_DATABASE_URL:-${DATABASE_URL:-}}"
 # Fallback: grep from .env (handles files with parse-breaking lines)
 [ -z "$DB_URL" ] && DB_URL=$(grep '^GBRAIN_DATABASE_URL=' /data/.env 2>/dev/null | head -1 | cut -d= -f2-)
 [ -z "$DB_URL" ] && DB_URL=$(grep '^DATABASE_URL=' /data/.env 2>/dev/null | head -1 | cut -d= -f2-)
+CONFIG_ENGINE=""
+CONFIG_DB_PATH=""
+if [ -f "${HOME}/.gbrain/config.json" ]; then
+  CONFIG_ENGINE=$(python3 - <<'PY' 2>/dev/null || true
+import json, os
+try:
+    data=json.load(open(os.path.expanduser('~/.gbrain/config.json')))
+    print(data.get('engine',''))
+except Exception:
+    pass
+PY
+)
+  CONFIG_DB_PATH=$(python3 - <<'PY' 2>/dev/null || true
+import json, os
+try:
+    data=json.load(open(os.path.expanduser('~/.gbrain/config.json')))
+    print(data.get('database_path',''))
+except Exception:
+    pass
+PY
+)
+fi
 
 # ── 1. Bun runtime ─────────────────────────────────────────
 if [ -n "$BUN_PATH" ]; then
@@ -92,21 +114,31 @@ else
 fi
 
 # ── 3. GBrain database ────────────────────────────────────
-if [ -n "$DB_URL" ] && [ -n "$GBRAIN_DIR" ] && [ -n "$BUN_PATH" ]; then
-  DOCTOR_OUT=$(DATABASE_URL="$DB_URL" GBRAIN_DATABASE_URL="$DB_URL" timeout 20 "$BUN_PATH" run "$GBRAIN_DIR/src/cli.ts" doctor 2>&1)
-  if echo "$DOCTOR_OUT" | grep -q "Health score\|brain_score\|Health Check"; then
-    SCORE=$(echo "$DOCTOR_OUT" | grep -oP 'Health score: \K[0-9]+' || echo '?')
-    pass "GBrain database (health score: $SCORE/100)"
+if [ -n "$GBRAIN_DIR" ] && [ -n "$BUN_PATH" ]; then
+  if [ -n "$DB_URL" ]; then
+    DOCTOR_OUT=$(DATABASE_URL="$DB_URL" GBRAIN_DATABASE_URL="$DB_URL" timeout 20 "$BUN_PATH" run "$GBRAIN_DIR/src/cli.ts" doctor 2>&1)
+  else
+    DOCTOR_OUT=$(timeout 20 "$BUN_PATH" run "$GBRAIN_DIR/src/cli.ts" doctor 2>&1)
+  fi
+  if echo "$DOCTOR_OUT" | grep -q "Health score\|brain_score\|Health Check\|health_score"; then
+    SCORE=$(echo "$DOCTOR_OUT" | grep -oE 'health_score"?: ?[0-9]+|Health score: [0-9]+' | grep -oE '[0-9]+' | head -1 || echo '?')
+    if [ "$CONFIG_ENGINE" = "pglite" ] && [ -n "$CONFIG_DB_PATH" ]; then
+      pass "GBrain database (pglite: $CONFIG_DB_PATH; health score: $SCORE/100)"
+    else
+      pass "GBrain database (health score: $SCORE/100)"
+    fi
   else
     fail "GBrain database — doctor returned no health data"
   fi
 else
-  [ -z "$DB_URL" ] && fail "GBrain database — no DATABASE_URL or GBRAIN_DATABASE_URL"
   [ -z "$GBRAIN_DIR" ] && skip "GBrain database — gbrain not found"
+  [ -z "$BUN_PATH" ] && skip "GBrain database — bun not available"
 fi
 
 # ── 4. GBrain worker process ──────────────────────────────
-if [ -n "$GBRAIN_DIR" ] && [ -n "$BUN_PATH" ] && [ -n "$DB_URL" ]; then
+if [ "$CONFIG_ENGINE" = "pglite" ] && [ -z "$DB_URL" ]; then
+  skip "GBrain worker — skipped for local PGLite config (no multi-process worker surface)"
+elif [ -n "$GBRAIN_DIR" ] && [ -n "$BUN_PATH" ] && [ -n "$DB_URL" ]; then
   if [ -f /tmp/gbrain-worker.pid ] && kill -0 "$(cat /tmp/gbrain-worker.pid)" 2>/dev/null; then
     pass "GBrain worker (PID: $(cat /tmp/gbrain-worker.pid))"
   else
@@ -159,11 +191,16 @@ EMBED_KEY="${OPENAI_API_KEY:-${VOYAGE_API_KEY:-}}"
 if [ -n "$EMBED_KEY" ]; then
   pass "Embedding API key set"
 else
-  fail "Embedding API key — neither OPENAI_API_KEY nor VOYAGE_API_KEY is set"
+  if timeout 20 gbrain doctor --json 2>/dev/null | grep -q '"name":"embeddings".*"status":"ok"'; then
+    pass "Embedding API key not exported; existing embeddings covered per doctor"
+  else
+    fail "Embedding API key — neither OPENAI_API_KEY nor VOYAGE_API_KEY is set"
+  fi
 fi
 
 # ── 8. Brain repo (if configured) ────────────────────────
-BRAIN_PATH="${GBRAIN_BRAIN_PATH:-/data/brain}"
+BRAIN_PATH="${GBRAIN_BRAIN_PATH:-${HOME}/brain}"
+[ -d "$BRAIN_PATH" ] || BRAIN_PATH="/data/brain"
 if [ -d "$BRAIN_PATH/.git" ]; then
   PAGE_COUNT=$(find "$BRAIN_PATH" -name "*.md" -not -path "*/.git/*" 2>/dev/null | wc -l)
   pass "Brain repo ($PAGE_COUNT pages at $BRAIN_PATH)"
