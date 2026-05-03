@@ -1,6 +1,6 @@
 ---
 name: fundamentals-review
-version: 1.1.0
+version: 1.4.2
 description: |
   Single-pass fundamental review of a Republic portfolio company using
   the Gates A/B/C framework. Enforces drafter/auditor separation,
@@ -26,7 +26,7 @@ mutating: true
 
 Canonical operational contract for every Republic portfolio fundamental review. This is the "hard behavioural rules" layer referenced at the top of `ways_of_working.md`. If anything here contradicts `ways_of_working.md`, **this skill wins** — it encodes the more recent correction.
 
-Last updated: 2026-04-29 (v1.4.0: drafts/ subfolder concept retired entirely — every review file at company root regardless of Gate-C state; Rule 24 added requiring extended YAML frontmatter with cap-table block per T2.3). Prior 2026-04-27 (v1.3.0: Phase 21.7 — gather now caches closed raises from prior manifests, only the active raise (raises[-1] in oldest→newest order) gets a fresh Playwright walk. Cached tabs carry `extra.cached_from = <prior_date>` flag and rewritten attachment paths pointing at prior date's evidence dir. Disable with `republic_review_gather --no-cache` if KIIS PDFs change or you need fresh comments on closed-raise threads). Prior 2026-04-27 (v1.2.0: Phase 21.5 — Rule 2b for `historical_context.md`). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
+Last updated: 2026-05-03 (v1.4.2: Rule 26 added — material external-news freshness gate after TransferGo false Series-C/funding resurfacing entered v5; Gate C adds news-freshness test). Prior 2026-05-03 (v1.4.1: frontmatter version corrected; Rule 5 auth recovery updated for CDP/long-lived Chrome and no SSH browser lifecycle; Gate C label corrected to 15-item checklist). Prior 2026-04-29 (v1.4.0: drafts/ subfolder concept retired entirely — every review file at company root regardless of Gate-C state; Rule 24 added requiring extended YAML frontmatter with cap-table block per T2.3). Prior 2026-04-27 (v1.3.0: Phase 21.7 — gather now caches closed raises from prior manifests, only the active raise gets a fresh Playwright walk; cached tabs carry `extra.cached_from = <prior_date>` flag and rewritten attachment paths pointing at prior date's evidence dir. Disable with `republic_review_gather --no-cache` if KIIS PDFs change or you need fresh comments on closed-raise threads). Prior 2026-04-27 (v1.2.0: Phase 21.5 — Rule 2b for `historical_context.md`). Prior 2026-04-23 (Rules 18–22 added). Initial 2026-04-17.
 
 ---
 
@@ -126,11 +126,12 @@ If the gather exits with code 3 / `AuthExpiredError`:
 
 - **Do not** route around it by using `WebFetch` on `europe.republic.com` — that endpoint returns 403 via Cloudflare regardless of stealth patches. `WebFetch europe.republic.com.*` is a forbidden operation throughout the review workflow.
 - **Do not** try to infer Republic content from Google cache or external fetches.
-- **Do** ask the user to run:
+- **Do not** run `republic-chrome start | stop | down | restart | login` over SSH. SSH-launched Chrome cannot decrypt Keychain-bound cookies and can kill the already-signed-in Chrome that both daemons and reviews depend on.
+- **Do** halt and ask Jack to refresh the long-lived Republic Chrome session from the mini's local GUI/Terminal if auth is genuinely expired. The supported review path is then SSH-safe and read-only: rerun only the gather, which attaches to the existing CDP Chrome session:
   ```
-  python -m scrapers.import_cookies
+  cd ~/agents/republic && ./scrapers/.venv/bin/python -m scrapers.republic_review_gather --company "{Company}"
   ```
-  and halt. Their Chrome cookies get imported into the Playwright persistent profile and the gather resumes.
+- `python -m scrapers.import_cookies` is legacy rollback documentation only; do not use it for the current CDP/Browser Owner path unless deliberately restoring deprecated Playwright-profile auth.
 
 ### 6. You do not edit the manifest
 
@@ -270,7 +271,7 @@ Spawn a fresh-context agent (Agent tool, subagent_type: `code-reviewer` or `gene
 - Read access to the evidence folder + CH filings + external tools
 - Instructions to be adversarial: re-derive the action from primary sources, challenge every claim
 
-**The 14-item checklist (expanded 2026-04-23 to add Investability-framework tests):**
+**The 16-item checklist (expanded 2026-04-23 to add Investability-framework tests; item 15 added 2026-04-29 for extended frontmatter; item 16 added 2026-05-03 for material-news freshness):**
 
 1. **Preference stack test** — every Section 10 scenario deducts the preference stack?
 2. **Multiple inflation test** — specific dated precedent transactions (named company + date + price + multiple), not generic sector ranges?
@@ -287,10 +288,11 @@ Spawn a fresh-context agent (Agent tool, subagent_type: `code-reviewer` or `gene
 13. **Sensitivity band test (Rule 20)** — §10g shows Investability_central, Investability_low, Investability_high with stresses documented? FRAGILE flag applied if band width > 15pp? Upward action gated by low-end?
 14. **EIS calibration test (Rule 21)** — if any route is EIS-eligible, §10g shows both (primary+EIS) and (secondary-no-EIS) Investability explicitly? §11 shows per-lot EIS status?
 15. **Extended frontmatter test (Rule 24, post 2026-04-29)** — does the review file open with the YAML frontmatter block per Rule 24 (cap-table block, fair_value_low/high_gbp, target_entry_price_gbp, holding_active, action enum)? Required for v2+ post-2026-04-29; absence on a new review fails Gate C.
+16. **Material-news freshness test (Rule 26, post 2026-05-03)** — every material external news item used as a thesis delta (funding, partnership, acquisition, major contract, regulatory approval, leadership, litigation) has publisher date, discovery date, resolved URL, and source class recorded? Google News discovery date is never treated as article date? Any funding/financing/exit claim is confirmed by a primary/company/investor source or at least two fresh independent sources?
 
 Agent returns PASS-with-evidence or FIX-with-specific-revision per item. On any FIX, drafter applies the revision and re-spawns the agent with the revised draft + prior findings attached. Loop until agent returns all-PASS.
 
-**Final output:** Audit transcript (all iterations verbatim) written into the review's **Section 20 — Self-Audit Log**. The existence of Section 20 with all-PASS across ALL 15 items is the gate; no Self-Audit Log = review is not finalised. Tests 11–14 are new as of 2026-04-23; test 15 added 2026-04-29; reviews predating this revision that did not run them are flagged for retrofit (see Phase 4 retrofit queue).
+**Final output:** Audit transcript (all iterations verbatim) written into the review's **Section 20 — Self-Audit Log**. The existence of Section 20 with all-PASS across ALL 16 items is the gate; no Self-Audit Log = review is not finalised. Tests 11–14 are new as of 2026-04-23; test 15 added 2026-04-29; test 16 added 2026-05-03; reviews predating this revision that did not run them are flagged for retrofit (see Phase 4 retrofit queue).
 
 ### 17. Template header block is mandatory — no "Headline" table variants
 
@@ -648,6 +650,41 @@ Every review file written at `~/brain/companies/{slug}/` MUST update `~/brain/co
 **Write discipline:** update the JSON atomically (tempfile + `os.replace`), preserve unrelated registry fields, run `python3 -m json.tool ~/brain/companies/investment_registry.json`, then run a path integrity check that every non-null `latestReview.path` exists. If the repo is being committed, stage the review file and registry update together.
 
 **Failure mode:** if the registry cannot be safely updated, state that the review is written but the run is NOT complete, leave a task or handoff, and do not claim downstream signal-grade/daily-digest state is current.
+
+---
+
+### 26. Material external-news freshness gate — Google News discovery date is not evidence date
+
+Added 2026-05-03 after TransferGo v5 incorporated stale/resurfaced Google News funding/partnership items as if they were current 2026 events. This is a stop-the-line accuracy rule because false financing/exit/partnership facts directly contaminate valuation, risk, and action.
+
+**Rule:** no material external-news item may be used as a thesis delta until its publication date and source freshness are verified.
+
+Applies to any external item used as evidence for:
+- funding / new investors / raise close / financing terms;
+- acquisition, IPO, sale process, exit, or strategic review;
+- major partnership, customer, retailer, license, regulatory approval;
+- leadership change, litigation, enforcement, insolvency, restatement;
+- any event that changes Q/A/M, fair value, probability weights, action, signal state, or review trigger.
+
+**Required evidence table (write into the review near “What's Changed” or Data Gaps):**
+
+| Claim | Source | Discovery date | Publisher date | Resolved URL | Freshness | Confirmation |
+|---|---|---:|---:|---|---|---|
+| $50M funding | Google News / FinTech Futures | 2026-04-26 | 2020-xx-xx if resolved stale | ... | stale/resurfaced | NOT usable as current |
+
+**Source hierarchy for material news:**
+1. Primary/company/investor/regulatory source with current date (company update, Republic update, CH filing, FCA/BoL/regulator, press release on company domain).
+2. Two independent reputable publishers with current publisher dates and resolved URLs.
+3. Single publisher with current publisher date is usable only as `unconfirmed external report`, not as valuation-changing fact, unless corroborated.
+4. Google News RSS discovery alone is never enough.
+
+**Hard stops:**
+- If `publisher date` is missing and the claim is material, do not use it as fact. Put it in Section 16 as `unverified/stale-risk external signal`.
+- If `publisher date` is older than 30 days before discovery, cap it at historical context; do not call it a new event.
+- If `publisher date` is older than 90 days before discovery, treat it as stale/resurfaced unless there is a fresh re-announcement from a primary source.
+- If a funding/exit/partnership claim appears only through Google News RSS and cannot be resolved to a fresh article, it cannot change Q/A/M, FV, TEP, action, or signal state.
+
+**Gate C enforcement:** item 16 verifies every material-news claim has the table fields above and that stale/unknown-date claims did not flow into valuation or action.
 
 ---
 

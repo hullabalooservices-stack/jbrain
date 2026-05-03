@@ -23,10 +23,11 @@ Compile a daily briefing from brain context.
 
 ## Contract
 
-- Every fact in the briefing includes an inline `[Source: slug, updated DATE]` citation.
+- Default briefing is read-only: no brain pages are created or modified unless the user explicitly requests it.
 - Meeting participants are resolved against the brain; gaps are explicitly flagged.
 - Active deals and action items include deadlines and recency context.
-- The briefing is read-only: no brain pages are created or modified unless the user explicitly requests it.
+- Morning/Telegram briefings are Jack-first and concise: calendar/open threads/priorities first; Plane/ops only when they change what Jack should know or do.
+- Use source paths/citations for non-obvious claims, but do not pack inline citations into every Telegram bullet.
 - Stale alerts surface pages relevant to today's context, not just all stale pages.
 
 ## Phases
@@ -107,14 +108,15 @@ mentioned must have a back-link from their page. See `skills/_brain-filing-rules
 
 ## Citation in Briefings
 
-When presenting facts from brain pages, include inline citations:
+When presenting non-obvious facts from brain pages in a full briefing, include inline citations:
 - "Jane is CTO of Acme [Source: people/jane-doe, updated 2026-04-01]"
-- This lets the user trace any claim back to the brain page and assess freshness
+
+For Telegram morning briefs, prefer brevity: cite only disputed, stale, or decision-critical facts with a compact path/source note.
 
 ## Anti-Patterns
 
 - **Briefing without brain queries.** Never generate a briefing from memory alone; always query gbrain for current data.
-- **Uncited facts.** Every claim must include `[Source: slug, updated DATE]`. A fact without a citation is unverifiable.
+- **Untraceable decision-critical facts.** Full briefings need citations for non-obvious claims; Telegram morning briefs need compact source/path notes only when the fact is disputed, stale, or decision-critical.
 - **Stale context presented as current.** If a page hasn't been updated in 30+ days, flag the staleness explicitly rather than presenting it as fresh.
 - **Modifying brain pages unprompted.** The briefing is read-only by default. Do not create or update pages unless the user explicitly requests it.
 - **Ignoring coverage gaps.** When a meeting participant has no brain page, say so. Silence about gaps hides ignorance.
