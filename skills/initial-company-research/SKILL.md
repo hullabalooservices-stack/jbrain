@@ -1,6 +1,6 @@
 ---
 name: initial-company-research
-version: 1.0.0
+version: 1.0.1
 description: |
   First-contact investment research for a company before it deserves a full
   fundamentals review. Builds a baseline dossier, evidence/source manifest,
@@ -15,6 +15,8 @@ triggers:
   - "look into {company}"
   - "is {company} worth diligence"
   - "triage this Republic raise"
+  - "research this Republic page"
+  - "triage this URL"
   - "new company: {company}"
   - "should we add {company} to the watchlist"
 tools:
@@ -53,6 +55,15 @@ Use `signal-grade` only for watcher/daemon events.
 ## Phases
 
 ### Phase 0 — Route and scope
+
+Accepted inputs:
+
+- company name;
+- Republic/Seedrs/company page URL;
+- company website URL;
+- article/press-release URL with a named company.
+
+If the user sends a bare URL and says “research this”, “look into this”, “triage this”, or similar, resolve it here rather than generic link ingest. A bare URL with no investment intent may still route to `idea-ingest`.
 
 1. Check `~/brain/companies/investment_registry.json` for an existing entry.
 2. Check `~/brain/companies/{slug}/` for existing `_review_v*.md`, `_evaluation_v*.md`, and `_initial_research_v*.md` files.
@@ -196,6 +207,38 @@ monitoring:
 
 If a registry candidate is useful, write it as a candidate patch only. Do not update `latestReview` as if this were a full review.
 
+### Phase 8.5 — Live pipeline handoff boundary
+
+Initial research may recommend ongoing monitoring, but it must not silently wire a new company into live scraping.
+
+Write a proposed registry/watchlist patch with:
+
+```yaml
+registry_candidate:
+  display_name: "..."
+  folderSlug: "..."
+  slug: "republic-or-seedrs-slug-or-null"
+  businessUrl: "..."
+  companyNumber: "..."
+  registeredName: "..."
+  owned: false
+  status: "watchlist_candidate"
+  secondaryMarket: false
+  matchConfig:
+    aliases: []
+    match_mode: word_boundary
+    exclude_phrases: []
+  watchFlags:
+    rss: true
+    ch_stream: true
+    google_news: true
+    snapshot: false
+```
+
+Current runtime caveat (2026-05-03): adding an approved registry entry with `companyNumber` makes Companies House stream matching possible; `watchFlags.rss` feeds registry-sourced RSS matching; Republic updates / Browser Owner market snapshots are currently owned/secondary-market biased; Google News still has owned-company bias in `sources/google_news.py`. If Jack wants non-owned watchlist monitoring, either patch those producers or label the dossier `monitoring_recommended_but_not_live`.
+
+Approval boundary: modifying `investment_registry.json` to add a new live watch target is a control-plane change. Do it only when Jack has asked to add the company to monitoring/watchlist, and then verify registry JSON plus the relevant producer path.
+
 ### Phase 9 — Triage verdict
 
 Allowed verdicts:
@@ -260,6 +303,8 @@ Before finalising, verify:
 - Recommendation is one of the four allowed triage verdicts.
 - No canonical FV, TEP, or BUY/ADD/HOLD/SELL action is issued.
 - Monitoring handoff includes aliases, false-positive exclusions, and full-review triggers.
+- If monitoring is recommended, dossier says whether it is `proposed_only`, `approved_for_registry`, or `monitoring_recommended_but_not_live`.
+- No new live registry/watchlist target is added unless Jack explicitly asks for monitoring/watchlist wiring.
 
 ## Anti-Patterns
 
@@ -270,6 +315,7 @@ Before finalising, verify:
 - Using stale/resurfaced funding or partnership articles as current facts.
 - Creating broad watch aliases without false-positive exclusions.
 - Updating `investment_registry.latestReview` from an initial dossier.
+- Silently adding a new company to live scraping from an initial dossier without Jack's monitoring/watchlist approval.
 - Treating lack of evidence as neutral rather than a data gap.
 
 ## Tools Used

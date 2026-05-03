@@ -1,6 +1,6 @@
 ---
 name: review-quality-report
-version: 1.0.0
+version: 1.0.1
 description: |
   Generate a deterministic quality-debt report for Republic company reviews:
   registry pointer integrity, latest-review status, evidence packet freshness,
@@ -35,6 +35,12 @@ This skill guarantees:
 - Does not change company actions, fair values, target entry prices, or review content.
 
 ## Inputs
+
+Delivery policy, confirmed by Jack 2026-05-03:
+
+- routine/weekly review-quality reports are saved to `~/brain/reports/republic-investing/`;
+- Telegram is used only when the run contains P0 or P1 findings that need attention;
+- do not send Telegram for P2/P3-only quality debt.
 
 Canonical inputs:
 

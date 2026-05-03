@@ -131,7 +131,7 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 
 | Trigger | Skill |
 |---|---|
-| First-pass company research / diligence triage — "initial research on {company}", "look into {company}", "is {company} worth diligence", "new company" | `skills/initial-company-research/SKILL.md` |
+| First-pass company research / diligence triage — "initial research on {company}", "look into {company}", "is {company} worth diligence", "new company", "research this Republic page", "triage this URL" | `skills/initial-company-research/SKILL.md` |
 | Run a full fundamentals review (Gates A/B/C) — "do a review of {company}", "investment review", valuation/action/FV/TEP | `skills/fundamentals-review/SKILL.md` |
 | Audit review quality / registry / evidence debt — "review quality report", "audit company reviews", "which reviews are stale" | `skills/review-quality-report/SKILL.md` |
 | Recontextualise a company given a new signal (5-min quick assessment) | `skills/signal-recontext/SKILL.md` |
@@ -151,9 +151,9 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 
 Filled (production):
 
-- ✓ initial-company-research v1.0.0 — first-contact investment triage before a full review; outputs source manifest, edge map, data gaps, monitoring handoff, and promote/reject/monitor verdict; explicitly forbidden from issuing FV/TEP/capital action.
+- ✓ initial-company-research v1.0.1 — first-contact investment triage before a full review; accepts company names or investment-intent URLs; outputs source manifest, edge map, data gaps, monitoring handoff, and promote/reject/monitor verdict; explicitly forbidden from issuing FV/TEP/capital action or silently wiring live scraping.
 - ✓ fundamentals-review v1.4.2 — Gates A/B/C, drafts/ subfolder retired entirely (2026-04-29), extended YAML/cap-table Rule 24, material-news freshness Rule 26, current CDP/long-lived Chrome auth recovery, 16-item Gate C checklist. Prior: registry write Rule 25, historical_context.md, manifest caching for closed raises.
-- ✓ review-quality-report v1.0.0 — deterministic quality-debt audit for registry pointers, review status, evidence packet coverage, Rule 24 frontmatter, Rule 26 material-news freshness risk, and contaminated/stale review follow-up.
+- ✓ review-quality-report v1.0.1 — deterministic quality-debt audit for registry pointers, review status, evidence packet coverage, Rule 24 frontmatter, Rule 26 material-news freshness risk, and contaminated/stale review follow-up; delivery default is saved report, Telegram only P0/P1.
 - ✓ signal-grade v0.4.0 — Phase 21.8 lifecycle transition detector + LLM-based news-disambiguation in production.
 - ✓ daily-digest v0.1.0 — Phase 21.10 morning rollup of signal pipeline.
 - ✓ weekly-self-eval v0.1.0 — Sunday autonomous reflection (shipped 2026-04-28).
