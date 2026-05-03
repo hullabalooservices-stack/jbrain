@@ -1,6 +1,6 @@
 ---
 name: signal-grade
-version: 0.4.0
+version: 0.4.1
 description: |
   Process all new events emitted by the Republic signal pipeline (email-watcher,
   order-book scraper, company-news, notifications). For each event, grade severity
@@ -138,6 +138,19 @@ When matched:
 **Why this elevates above ordinary grading:** lifecycle transitions are the events the registry must be updated for, otherwise the gather + historical_context + reviews go silently stale. They are the highest-value signal class. Bias toward false positives is acceptable — Jack would rather get one unnecessary "new raise?" Telegram than miss a real one.
 
 After this prelude check fires (or doesn't), continue to Phase 3a flavour identification below.
+
+**3a-prelude3 — GOOGLE NEWS FRESHNESS GUARD (added 2026-05-03 after TransferGo/Mastercard old-article resurfacing):**
+
+For `source == "google-news"`, do **not** treat the Google News discovery timestamp as the publisher/article date.
+
+Before grading a Google News event severity ≥2:
+- Check whether the event title/summary/body or resolved article metadata includes an article publication date.
+- If the resolved publisher date is older than 30 days before `event.ts`, grade at most **severity 1** unless the item is explicitly a current re-announcement or new filing-backed update.
+- If the resolved publisher date is older than 90 days, grade **severity 0** and reason: `stale article resurfaced by Google News`.
+- If no publisher date is available and the item is a generic PR headline (partnership, funding, product launch, interview, “welcomes investors”, “launches accounts”), grade conservatively at **0–1** unless another current source corroborates freshness.
+- The Telegram/digest reasoning must distinguish: `fresh article` vs `publication date unknown` vs `stale article resurfaced`.
+
+Example calibration: `TransferGo and Mastercard Partnership to Allow Real-Time Cross-Border Payment Transfer` surfaced by Google News on 2026-05-03 but The Fintech Times article date was 2020-12-08. Correct grade: **0**, no review, no “real product-distribution move” language.
 
 **3a — Identify event flavour:**
 - `source == "republic-email"` (notifications.jsonl): investor email forwarded from Republic. Body is in `raw.body_full` (preferred) or `summary` (fallback, truncated). Strip Gmail forward preamble (`---------- Forwarded message ----------` block) and Republic risk-warning boilerplate (`Don't invest unless you're prepared...`) before reading.
