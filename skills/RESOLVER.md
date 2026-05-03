@@ -131,7 +131,9 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 
 | Trigger | Skill |
 |---|---|
-| Run a full fundamentals review (Gates A/B/C) — "do a review of {company}", "investment review" | `skills/fundamentals-review/SKILL.md` |
+| First-pass company research / diligence triage — "initial research on {company}", "look into {company}", "is {company} worth diligence", "new company" | `skills/initial-company-research/SKILL.md` |
+| Run a full fundamentals review (Gates A/B/C) — "do a review of {company}", "investment review", valuation/action/FV/TEP | `skills/fundamentals-review/SKILL.md` |
+| Audit review quality / registry / evidence debt — "review quality report", "audit company reviews", "which reviews are stale" | `skills/review-quality-report/SKILL.md` |
 | Recontextualise a company given a new signal (5-min quick assessment) | `skills/signal-recontext/SKILL.md` |
 | Grade an ambiguous signal (severity 0-4 + review flag) | `skills/signal-grade/SKILL.md` |
 | Interpret an order-book pattern semantically (crossed market, depth surge, etc.) | `skills/order-book-interpretation/SKILL.md` |
@@ -145,11 +147,13 @@ Custom domain skills. Same shape as upstream skills above; added by Jack rather 
 - news-classification runs first on news items, then signal-grade consumes the materiality output.
 - fundamentals-review supersedes signal-recontext only when recontext concludes "stance changed, full re-eval needed."
 
-### Status (2026-04-28)
+### Status (2026-05-03)
 
 Filled (production):
 
+- ✓ initial-company-research v1.0.0 — first-contact investment triage before a full review; outputs source manifest, edge map, data gaps, monitoring handoff, and promote/reject/monitor verdict; explicitly forbidden from issuing FV/TEP/capital action.
 - ✓ fundamentals-review v1.4.2 — Gates A/B/C, drafts/ subfolder retired entirely (2026-04-29), extended YAML/cap-table Rule 24, material-news freshness Rule 26, current CDP/long-lived Chrome auth recovery, 16-item Gate C checklist. Prior: registry write Rule 25, historical_context.md, manifest caching for closed raises.
+- ✓ review-quality-report v1.0.0 — deterministic quality-debt audit for registry pointers, review status, evidence packet coverage, Rule 24 frontmatter, Rule 26 material-news freshness risk, and contaminated/stale review follow-up.
 - ✓ signal-grade v0.4.0 — Phase 21.8 lifecycle transition detector + LLM-based news-disambiguation in production.
 - ✓ daily-digest v0.1.0 — Phase 21.10 morning rollup of signal pipeline.
 - ✓ weekly-self-eval v0.1.0 — Sunday autonomous reflection (shipped 2026-04-28).
