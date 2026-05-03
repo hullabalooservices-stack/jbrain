@@ -34,10 +34,11 @@ Last updated: 2026-04-29 (v1.4.0: drafts/ subfolder concept retired entirely —
 
 This skill spans two repositories that **must not be confused**:
 
-- **READS** (manifest + evidence): `~/agents/republic/research/{slug}/evidence/{YYYY-MM-DD}/manifest.json` and the OCR'd PDFs alongside it. Created by the gather (`~/agents/republic/scrapers/republic_review_gather.py`). This is in the agent runtime tree, not in brain.
+- **READS** (manifest + evidence): prefer the review-readable current packet at `~/brain/companies/{brain-slug}/evidence/current/` when present (`EVIDENCE_INDEX.md`, `manifest.json`, `historical_context.md`, selected safe artifacts). That packet is exported from the runtime tree by `python -m scrapers.export_review_evidence` and is intentionally overwritten by the next accepted evidence export for the company.
+- **RUNTIME SOURCE** (full scrape evidence): `~/agents/republic/research/{source-slug}/evidence/{YYYY-MM-DD}/manifest.json` and the OCR'd artifacts alongside it. Created by the gather (`~/agents/republic/scrapers/republic_review_gather.py`). This remains in the agent runtime tree, not as a full brain mirror.
 - **WRITES** (review draft): `~/brain/companies/{slug}/{YYYY-MM-DD}_{slug}_review_v{N}.md`. This is in the Obsidian/git-synced brain tree.
 
-Two separate repos, two separate purposes. Don't write reviews into `~/agents/`; don't expect manifests to live in `~/brain/`.
+Two separate repos, two separate purposes. Don't write reviews into `~/agents/`; don't expose the full runtime tree to Claude Desktop. If a brain current packet exists, read it as the compact evidence surface; if it is missing/stale, gather/export or disclose the waiver before drafting.
 
 The internal helper `~/agents/republic/scrapers/review_common.py` is invoked by the gather (legacy URL fallback, manifest aggregation). You do not call it directly.
 
@@ -56,15 +57,16 @@ Example: `2026-04-13_heights_evaluation_v8.md` is the latest → today writes `{
 
 ## The non-negotiables
 
-### 1. No synthesis before today's manifest exists on disk
+### 1. No synthesis before the evidence gate is satisfied
 
-Before writing a single line of a review dated `YYYY-MM-DD`, verify that:
+Before writing a single line of a review dated `YYYY-MM-DD`, verify one of:
 
 ```
-~/agents/republic/research/{company-slug}/evidence/{YYYY-MM-DD}/manifest.json
+~/brain/companies/{brain-slug}/evidence/current/manifest.json
+~/agents/republic/research/{source-slug}/evidence/{YYYY-MM-DD}/manifest.json
 ```
 
-exists and was produced by `~/agents/republic/scrapers/republic_review_gather.py`. If absent, you **run the gather** (or ask the user to, if auth is the blocker) **before** any review body is written.
+For Claude Desktop/MacBook, the brain `evidence/current/` packet is the preferred surface because it is safe, scrubbed, and readable through the rooted connector. For Keith/mini runtime work, the source manifest remains under `~/agents/republic/research/...` and should be exported with `python -m scrapers.export_review_evidence` before Claude Desktop consumes it. If neither exists, run the gather/export (or ask the user to, if auth is the blocker) before any review body is written. If Jack explicitly waives a fresh scrape/export for a test, draft, or maintenance run, the review and registry must state the waiver and data vintage.
 
 **Violation example** — TransferGo v1 (2026-04-17): wrote the full 19-section review from Companies House + external triangulation only. No Republic tabs walked. No manifest on disk. No evidence gate. v1 must never be repeated.
 
@@ -79,17 +81,18 @@ The manifest is the index into the evidence folder. Read it first. It tells you:
 
 ### 2b. Read `historical_context.md` BEFORE drafting Sections 2, 12, 13, 15
 
-Added 2026-04-27 (Phase 21.5). Alongside the manifest, the gather writes:
+Added 2026-04-27 (Phase 21.5). Alongside the manifest, the gather/export makes the deterministic historical summary available as:
 
 ```
-~/agents/republic/research/{slug}/evidence/{YYYY-MM-DD}/historical_context.md
+~/brain/companies/{brain-slug}/evidence/current/historical_context.md
+~/agents/republic/research/{source-slug}/evidence/{YYYY-MM-DD}/historical_context.md
 ```
 
 This file is a deterministic markdown summary built by `scrapers.historical_context`. It aggregates 30/90 days of watcher data filtered to the company:
 
 - **Order-book history** (last 90d): VWAP trajectory + delta %, bid-ask spread (median + range), depth evolution (buy/sell counts over time), all crossed-market events with timestamps + crossing %.
 - **Investor emails** (last 30d): every Republic email subject + date that the email-watcher daemon caught.
-- **News + filings** (last 90d): all Companies House filings (with type) + all Google News articles for this slug.
+- **News + filings** (last 90d): all Companies House filings (with type) + all Google News articles for this slug. Google News rows show observed date, publisher/article date where available, and freshness label; do not treat observed/discovery date as publisher date.
 - **Recent graded signals** (last 30d): every signal-grade output for this company by severity, with reasoning + Telegram-sent flag.
 - **Rule-based alerts** (last 30d): order-book daemon's Crossed-market / High-notional alert log.
 
@@ -616,31 +619,35 @@ without the extended frontmatter fails Gate C and must be revised.
 
 ---
 
-### 25. Registry update is part of review finalisation — not optional backfill
+### 25. Registry update is part of every company-root review update — not optional backfill
 
-Every completed review MUST update `~/brain/companies/investment_registry.json` before the review is reported as done. A review file at company root and a stale registry is an incomplete run.
+Every review file written at `~/brain/companies/{slug}/` MUST update `~/brain/companies/investment_registry.json` before the run is reported as done. A review file at company root and a stale registry is an incomplete run, even if the review is scrape-waived, maintenance-only, or partly carried-forward.
 
-**When:** after Gate C returns all-PASS and after any resulting edits are applied, but before final user delivery / commit. Do not update the registry from a draft that has not passed Gate C.
+**When:** after the review file is written and self-audited enough to represent the latest state for that company, but before final user delivery / commit. If Gate C returns all-PASS, mark the registry update as canonical/final. If prerequisites were waived or parts of the analysis are carried forward, still update the registry but explicitly mark the review as limited/maintenance/test and record what was done vs not done.
 
 **Where this belongs:** this `fundamentals-review` skill owns the write. Signal-grade, daily-digest, bid-state, and watcher skills are consumers of the registry; they must not infer or backfill fundamental review state opportunistically.
 
-**Source of truth for the registry update:** parse the review's YAML frontmatter first, then verify against the `★ Decision Output` block and Section 10/11 values. If YAML and prose disagree, fix the review first; do not mirror inconsistent data into the registry.
+**Source of truth for the registry update:** parse the review's YAML frontmatter first, then verify against the `★ Decision Output` block and Section 10/11 values. If YAML and prose disagree, fix the review first; do not mirror inconsistent data into the registry. If a field was not recomputed, carry forward the prior registry value only when the review explicitly says it is carried forward.
 
 **Required registry fields to update for the company entry:**
 
 - `latestReview.path` → `companies/{folderSlug}/{filename}`
 - `latestReview.date` → review date
 - `latestReview.version` → review version
-- `latestReview.fundamentalsScore` → `fundamentals_score`
-- `latestReview.signalState` → `signal_state`
-- `latestReview.action` → `action`
-- `latestReview.targetEntryPrice` → `target_entry_price_gbp` when present
-- `fairValue.low`, `fairValue.high`, `fairValue.asOf`, `fairValue.basis` → from YAML / Section 10 fair-value derivation
+- `latestReview.fundamentalsScore` → `fundamentals_score` or prior value explicitly carried forward
+- `latestReview.signalState` → `signal_state` or prior value explicitly carried forward
+- `latestReview.action` → `action` or prior value explicitly carried forward
+- `latestReview.targetEntryPrice` → `target_entry_price_gbp` when present, or prior value explicitly carried forward
+- `latestReview.reviewStatus` → `canonical_final` | `limited_update` | `maintenance_refresh` | `test_candidate`
+- `latestReview.completionSummary` → one short sentence naming what was completed
+- `latestReview.limitations` → short list/string naming waived, missing, stale, or carried-forward elements
+- `latestReview.evidenceStatus` / `latestReview.dataVintage` → concise evidence freshness statement
+- `fairValue.low`, `fairValue.high`, `fairValue.asOf`, `fairValue.basis` → from YAML / Section 10 fair-value derivation when recomputed; otherwise preserve prior values and note carried-forward status in `latestReview.limitations`
 - `holding_active`-dependent fields only when the review has validated Jack's position; do not invent holdings from prose
 
 **Write discipline:** update the JSON atomically (tempfile + `os.replace`), preserve unrelated registry fields, run `python3 -m json.tool ~/brain/companies/investment_registry.json`, then run a path integrity check that every non-null `latestReview.path` exists. If the repo is being committed, stage the review file and registry update together.
 
-**Failure mode:** if the registry cannot be safely updated, state that the review is written but NOT finalised, leave a task in `~/brain/ops/tasks.md`, and do not claim downstream signal-grade/daily-digest state is current.
+**Failure mode:** if the registry cannot be safely updated, state that the review is written but the run is NOT complete, leave a task or handoff, and do not claim downstream signal-grade/daily-digest state is current.
 
 ---
 
