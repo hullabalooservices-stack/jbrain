@@ -145,16 +145,17 @@ For `source == "google-news"`, do **not** treat the Google News discovery timest
 
 Before grading a Google News event severity ≥2:
 - Check whether the event title/summary/body or resolved article metadata includes an article publication date.
+- The Python dispatcher normalizes `raw.published_at`/resolved metadata into `article_published_at`, `article_age_days`, `publisher`, `article_url`, and `google_news_freshness` before the LLM prompt/log.
 - If the resolved publisher date is older than 30 days before `event.ts`, grade at most **severity 1** unless the item is explicitly a current re-announcement or new filing-backed update.
-- If the resolved publisher date is older than 90 days, grade **severity 0** and reason: `stale article resurfaced by Google News`.
-- If no publisher date is available and the item is a generic PR headline (partnership, funding, product launch, interview, “welcomes investors”, “launches accounts”), grade conservatively at **0–1** unless another current source corroborates freshness.
+- If the resolved publisher date is older than 90 days, the dispatcher should suppress before LLM grading: severity **0**, no review, no Telegram, reason `stale article resurfaced by Google News`.
+- If no publisher date is available and the item is a generic PR headline (partnership, funding, product launch, interview, “welcomes investors”, “launches accounts”), the dispatcher should cap before LLM grading: severity **1**, no review, no Telegram, reason `publication date unknown for generic Google News headline`, unless another current source corroborates freshness.
 - The Telegram/digest reasoning must distinguish: `fresh article` vs `publication date unknown` vs `stale article resurfaced`.
 
 Example calibration: `TransferGo and Mastercard Partnership to Allow Real-Time Cross-Border Payment Transfer` surfaced by Google News on 2026-05-03 but The Fintech Times article date was 2020-12-08. Correct grade: **0**, no review, no “real product-distribution move” language.
 
 **3a — Identify event flavour:**
 - `source == "republic-email"` (notifications.jsonl): investor email forwarded from Republic. Body is in `raw.body_full` (preferred) or `summary` (fallback, truncated). Strip Gmail forward preamble (`---------- Forwarded message ----------` block) and Republic risk-warning boilerplate (`Don't invest unless you're prepared...`) before reading.
-- `source == "republic-updates"` (notifications.jsonl): new post on Republic Updates tab. Body in `summary`, URL in `url`.
+- `source == "republic-updates"` (notifications.jsonl): new post on Republic Updates tab. Body in `summary`; direct link may be in `url`, `link`, `href`, `permalink`, `web_url`, `update_url`, or the same nested `raw.*` aliases. `signal_grade_dispatcher` skips these as handled by router_lite/Horatio; router formatters must preserve the direct link if a material update is promoted.
 - order-book event (snapshots.jsonl, has `bestAsk`, `bestBid`, `slug`, `vwap`, etc.): a routine snapshot. NEW since v0.2.0: ALSO check whether `bestAsk` is below the company's TEP (extracted from the latest review's Section 10 — see Phase 3c). If yes, this snapshot is a **TEP-cross signal** and grades higher than a routine snapshot.
 - `source == "companies-house"` (news.jsonl): a new CH filing. Includes accession_id, filing_type, filing_date.
 - `source == "google-news"` (news.jsonl): a news article surfaced for one of the registry companies.

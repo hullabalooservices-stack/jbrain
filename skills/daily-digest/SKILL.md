@@ -50,6 +50,7 @@ The dispatcher pre-builds and passes you:
 4. **Lifecycle flags** (from `investment_registry.json`):
    - Companies with `raise_watch: true` (you're waiting on a raise to open)
    - Companies with `raise_status: open` (active rounds you might want to monitor)
+5. **Source-contract coverage** may include raw watchlist/news-feed rows. Google News rows are annotated by the dispatcher with `fresh article`, `publication date unknown`, or `stale article resurfaced`; never present a stale/resurfaced row as current product or distribution news.
 
 If a section's data is empty, the dispatcher passes `(none)` — say so plainly, don't fabricate.
 
