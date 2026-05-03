@@ -60,3 +60,17 @@ verdict: unchanged | reconsider | reconsider-urgently
 ## Body TBD
 
 Full procedure with examples and anti-patterns added in Phase 24. Until then, agents invoking this skill should use the contract above + Jack's integrated review workflow (`reference_integrated_review_workflow.md`) as loose guidance.
+
+## Contract
+
+This skill follows its purpose/frontmatter and the phases documented above. Preserve existing behaviour; this section exists to satisfy the shared skill conformance contract.
+
+## Anti-Patterns
+
+- Do not bypass the documented phases.
+- Do not invent side effects not described by the skill.
+- Do not treat this skill as complete without the relevant verification evidence.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

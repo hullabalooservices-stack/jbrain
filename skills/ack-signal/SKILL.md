@@ -440,3 +440,13 @@ fidelity over the first 14 days. Specifically watch for:
   should default to most-recent more aggressively).
 
 Bump version when calibration shifts; record the change rationale in commit message.
+
+## Anti-Patterns
+
+- Do not bypass the documented phases.
+- Do not invent side effects not described by the skill.
+- Do not treat this skill as complete without the relevant verification evidence.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

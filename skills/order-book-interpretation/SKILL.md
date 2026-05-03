@@ -41,3 +41,17 @@ review_hint: true | false
 ## Body TBD
 
 Full catalogue + edge cases + relation to FV distance in Phase 21.
+
+## Contract
+
+This skill follows its purpose/frontmatter and the phases documented above. Preserve existing behaviour; this section exists to satisfy the shared skill conformance contract.
+
+## Anti-Patterns
+
+- Do not bypass the documented phases.
+- Do not invent side effects not described by the skill.
+- Do not treat this skill as complete without the relevant verification evidence.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

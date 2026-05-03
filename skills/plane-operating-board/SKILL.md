@@ -1,3 +1,17 @@
+---
+name: plane-operating-board
+description: Operate Jack's Plane board as the Keith/Hermes task source of truth while keeping plans and evidence in the brain.
+triggers:
+  - "task"
+  - "todo"
+  - "Plane"
+  - "Backlog"
+  - "operating board"
+tools:
+  - shell
+mutating: true
+---
+
 # Plane Operating Board
 
 ## Purpose
@@ -20,7 +34,7 @@ Mobile/iPhone notes:
 - The iPhone must be logged into the same Tailscale tailnet.
 - On the mini, use `/Applications/Tailscale.app/Contents/MacOS/Tailscale`, not `/usr/local/bin/tailscale`, because the symlink can crash with `bundleIdentifier is unknown`.
 - Tailscale Serve config should show `/ proxy http://localhost:8080` for `https://agent.taila0e417.ts.net`.
-- Plane env currently remains local (`WEB_URL=http://localhost:8080`) because the verified HTTPS proxy works without restarting Plane.
+- Plane public URL config points at Tailnet HTTPS for native app support: `APP_DOMAIN=agent.taila0e417.ts.net`, `WEB_URL=https://${APP_DOMAIN}`, `CORS_ALLOWED_ORIGINS=https://${APP_DOMAIN}`.
 
 Local MCP bridge notes:
 - Hermes MCP server: `plane`
@@ -36,7 +50,7 @@ This skill guarantees:
 - Non-committed ideas are treated as effective no and placed in `Parked`, not `Backlog`.
 - Every actionable Plane card links back to the source brain file/report/session where possible.
 - Daily board stress-test checks stale, duplicate, blocked, completed, dependency-sensitive, and source-link-missing cards.
-- Morning Telegram brief summarizes yesterday, overnight, and this morning's priorities, with the Plane board link.
+- Morning Telegram brief is Jack-first: yesterday, overnight, and today's priorities, with Plane as one input rather than the product, plus the Plane board link.
 
 ## Board Semantics
 
@@ -157,34 +171,39 @@ Idempotency:
 
 Run after the daily backlog stress-test job.
 
+Purpose: a Jack-first morning brief, not a Plane audit. Plane is one input; the output is what Jack needs to know or do today.
+
 Format:
 
 ```text
 Morning, Jack.
 
 Yesterday:
-- ...
+- {max 3 bullets: material shipped / changed / decided}
 
 Overnight:
-- ...
+- {max 2 bullets: failures, alerts, or notable no-news}
 
-This morning:
-1. ...
-2. ...
-3. ...
+Today:
+1. {Jack-facing priority or decision}
+2. {Keith priority only if Jack should care}
+3. {optional}
 
 Board: https://agent.taila0e417.ts.net/agent/projects
 
 Watchouts:
-- ...
+- {max 2; omit if none}
 ```
 
 Rules:
-- Keep it short.
-- Include Plane board link every time.
+- Max ~180 words excluding the board URL.
+- Use the 07:45 Plane stress-test as context, not content to forward.
+- Use Plane IDs only when the ID is the actionable reference.
+- Separate Jack actions/decisions from Keith work when ambiguity would matter.
+- Include Republic/agent-stack internals only if they create a blocker, decision, or material risk for Jack.
 - Distinguish completed work from configured-but-unverified work.
 - Mention Parked only when a parked item has a due review date or Jack asked to revisit it.
-- If Plane access fails, say so and fall back to brain/session evidence without pretending the board was checked.
+- If Plane access fails, say so and do not imply the board was checked.
 
 ## Migration from Brain Tasks
 
@@ -212,3 +231,7 @@ Current migrated active cards:
 - Letting Backlog contain vague cards with no next action.
 - Sending a morning brief that claims Plane was checked when API/MCP access failed.
 - Making the daily brief a long audit report.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

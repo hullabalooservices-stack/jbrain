@@ -36,7 +36,9 @@ tools:
 mutating: true
 ---
 
-# signal-grade — Contract
+# signal-grade
+
+## Contract
 
 Single skill that handles every flavour of daemon-emitted Republic event. The agent invoking this skill (typically via scheduled trigger every 60s, but also callable from chat) processes ALL new entries across the watcher's input streams in one pass.
 
@@ -264,7 +266,7 @@ After successful processing of all events in a stream, atomically update the pos
 
 ---
 
-## Anti-patterns (do not do these)
+## Anti-Patterns
 
 - ❌ Embed an Anthropic API call in Python code outside this SKILL. The SKILL is the LLM contract; daemons stay infrastructure.
 - ❌ Re-process events by ignoring position state. Idempotency is non-negotiable per `~/gbrain/skills/cron-scheduler/SKILL.md`.
@@ -282,7 +284,7 @@ Edge cases to watch as data accumulates:
 - Email volume from one company in a week — does multi-event throttling matter (don't ping Jack 5× in a day for one slug)?
 - News classification: which `companies-house` filing types are genuinely material vs accounting noise?
 
-## Output to caller
+## Output Format
 
 Final stdout (one-line JSON, not markdown — for cron-scheduler integration):
 ```json

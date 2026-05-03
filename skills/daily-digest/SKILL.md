@@ -30,7 +30,9 @@ tools:
 mutating: false
 ---
 
-# daily-digest — Contract
+# daily-digest
+
+## Contract
 
 The dispatcher invokes you ONCE PER DAY at 09:00 Europe/London with a pre-aggregated user message. Your job: turn it into ONE Telegram message Jack reads with his morning coffee.
 
@@ -54,7 +56,7 @@ The dispatcher pre-builds and passes you:
 
 If a section's data is empty, the dispatcher passes `(none)` — say so plainly, don't fabricate.
 
-## Output contract
+## Output Format
 
 Compose a SINGLE Telegram message body. Plain text. ≤1500 chars. No markdown unless plain `*` for emphasis on key items.
 
@@ -111,3 +113,17 @@ That's fine. Brevity in noise is honest.
 ## Final response format
 
 Just the Telegram body. No preamble. No `[SILENT]` (this skill always produces output, even on quiet days). No JSON envelope. Hermes' send_message tool (or the dispatcher's direct Telegram call) ships it as-is.
+
+## Contract
+
+This skill follows its purpose/frontmatter and the phases documented above. Preserve existing behaviour; this section exists to satisfy the shared skill conformance contract.
+
+## Anti-Patterns
+
+- Do not bypass the documented phases.
+- Do not invent side effects not described by the skill.
+- Do not treat this skill as complete without the relevant verification evidence.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

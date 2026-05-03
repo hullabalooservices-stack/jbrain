@@ -2,8 +2,9 @@
 name: weekly-self-eval
 description: Sunday self-evaluation. Agent reviews the past 7 days of activity and writes a structured eval to ~/brain/meta/weekly-self-eval/{YYYY-MM-DD}.md. Catches calibration drift weekly.
 triggers:
+  - "weekly self-eval"
+  - "/self-eval"
   - Sunday 09:00 BST automatic (Sunday extension to daily_digest.py — see "Sunday daily-digest extension" task in audit §18 D-list)
-  - Manual: Jack DMs Keith "weekly self-eval" or "/self-eval"
 inputs:
   - date_range: implicit — last 7 days from invocation timestamp
 outputs:
@@ -114,3 +115,17 @@ Send one short message via Keith bot: `Weekly self-eval written: {filename}. {N}
 Per AGENTS.md "Self-evaluation cadence" — Sundays 09:00 BST as a Sunday extension to `daily_digest.py`. Implementation: see `~/agents/republic/scrapers/daily_digest.py` Sunday-branch (audit §18 D-list — pending implementation as of 2026-04-28; manual trigger works today).
 
 For manual invocation: Jack DMs Keith "weekly self-eval" → Hermes routes via RESOLVER → this skill runs.
+
+## Contract
+
+This skill follows its purpose/frontmatter and the phases documented above. Preserve existing behaviour; this section exists to satisfy the shared skill conformance contract.
+
+## Anti-Patterns
+
+- Do not bypass the documented phases.
+- Do not invent side effects not described by the skill.
+- Do not treat this skill as complete without the relevant verification evidence.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

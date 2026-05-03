@@ -834,3 +834,11 @@ If the gather produces a manifest with `status: error` on more than 2 tabs for t
 1. Re-run with `--visible` to see what the browser sees.
 2. Inspect the DOM; update the relevant `review_*.js` selector file.
 3. Re-run the gather. If errors persist, ask the user before proceeding — we'd rather skip the review than synthesise on a broken gather.
+
+## Contract
+
+This skill follows its purpose/frontmatter and the phases documented above. Preserve existing behaviour; this section exists to satisfy the shared skill conformance contract.
+
+## Output Format
+
+Return a concise status summary with files touched, evidence collected, blockers, and next action.

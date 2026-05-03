@@ -70,6 +70,7 @@ This is the dispatcher. Skills are the implementation. **Read the skill file bef
 | Task add/remove/complete/defer/review for active Keith/Hermes operating work | `skills/plane-operating-board/SKILL.md` |
 | Legacy/non-Plane daily task list maintenance only | `skills/daily-task-manager/SKILL.md` |
 | Morning prep, meeting context, day planning | `skills/daily-task-prep/SKILL.md` |
+| Morning digest, yesterday's summary, what happened overnight, daily roundup | `skills/daily-digest/SKILL.md` |
 | Daily briefing, "what's happening today" | `skills/briefing/SKILL.md` |
 | Cron scheduling, quiet hours, job staggering | `skills/cron-scheduler/SKILL.md` |
 | Save or load reports | `skills/reports/SKILL.md` |
